@@ -1,4 +1,3 @@
-import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -19,6 +18,8 @@ function buildAuthState(
     user: null,
     hasSession: false,
     isAuthenticated: false,
+    isAuth0Authenticated: false,
+    auth0Role: null,
     isLoading: false,
     authError: null,
     login: vi.fn(async () => {}),
@@ -44,7 +45,7 @@ describe('signed-in navigation and footer state', () => {
     );
 
     expect(screen.getAllByText('Sign In').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Sign Out')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sign Out')).toBeNull();
     expect(screen.queryAllByRole('link', { name: 'Dashboard' })).toHaveLength(0);
   });
 
@@ -52,6 +53,8 @@ describe('signed-in navigation and footer state', () => {
     mockUseAuth.mockReturnValue(
       buildAuthState({
         hasSession: true,
+        isAuthenticated: true,
+        isAuth0Authenticated: true,
         authError: 'Profile sync failed',
       }),
     );
@@ -63,7 +66,7 @@ describe('signed-in navigation and footer state', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.queryByText('Sign In')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sign In')).toBeNull();
     expect(screen.getAllByText('Sign Out').length).toBeGreaterThan(0);
     expect(screen.queryAllByRole('link', { name: 'Dashboard' }).length).toBeGreaterThan(0);
   });

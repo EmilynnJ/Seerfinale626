@@ -6,7 +6,6 @@ import { dashboardPathForRole } from '../../lib/dashboardRoute';
 export function DashboardPage() {
   const {
     user,
-    isAuthenticated,
     isAuth0Authenticated,
     auth0Role,
     isLoading,
@@ -61,7 +60,7 @@ export function DashboardPage() {
     return <LoadingPage message="Finalizing your account and dashboard..." />;
   }
 
-  if (!user && !isAuthenticated) {
+  if (!user) {
     return <Navigate to="/login" replace />;
   }
 

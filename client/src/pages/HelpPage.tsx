@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/ui';
-import { useToast } from '../components/ToastProvider';
 
 /* ── Legal Policy Links ─────────────────────────────────────────
    Update each `href` with your Termly-generated document URL.
