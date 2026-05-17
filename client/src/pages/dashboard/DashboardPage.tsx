@@ -3,10 +3,11 @@ import { LoadingPage, Button } from '../../components/ui';
 import { ClientDashboard } from './ClientDashboard';
 import { ReaderDashboard } from './ReaderDashboard';
 import { AdminDashboard } from './AdminDashboard';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 
 export function DashboardPage() {
-  const { user, isAuthenticated, isLoading, authError, refreshUser, logout } = useAuth();
+  const { user, isAuthenticated, isAuth0Authenticated, isLoading, authError, refreshUser, logout } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return <LoadingPage message="Preparing your dashboard..." />;
@@ -42,11 +43,22 @@ export function DashboardPage() {
     );
   }
 
-  if (!isAuthenticated || !user) {
+  // If Auth0 says the user is signed in, allow an extra render cycle for
+  // backend sync instead of bouncing them to /login.
+  if (isAuth0Authenticated && !user) {
+    return <LoadingPage message="Finishing sign-in and loading your dashboard..." />;
+  }
+
+  if (!isAuthenticated && !user) {
     return <Navigate to="/login" replace />;
   }
 
-  switch (user.role) {
+  const role = user?.role ?? 'client';
+  if (location.pathname === '/dashboard') {
+    return <Navigate to={`/dashboard/${role}`} replace />;
+  }
+
+  switch (role) {
     case 'admin':
       return <AdminDashboard />;
     case 'reader':

@@ -37,6 +37,9 @@ function AppRoutes() {
           <Route path="/readers/:id" element={<ReaderProfilePage />} />
           <Route path="/community" element={<CommunityHubPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/dashboard/client" element={<DashboardPage />} />
+          <Route path="/dashboard/reader" element={<DashboardPage />} />
+          <Route path="/dashboard/admin" element={<DashboardPage />} />
           <Route path="/reading/:id" element={<ReadingSessionPage />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/help" element={<HelpPage />} />
