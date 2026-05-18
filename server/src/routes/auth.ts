@@ -1,9 +1,10 @@
 import { Router } from "express";
+import type { Request, Response, NextFunction } from "express";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../db/db";
 import { users } from "../db/schema";
-import { requireAuth } from "../middleware/auth";
+import { checkJwt, requireAuth } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import { logger } from "../utils/logger";
 import { config } from "../config";
@@ -34,9 +35,31 @@ function resolveInitialRole(
 }
 
 // POST /api/auth/sync — Sync Auth0 user to internal DB on first login
+export function validateSyncJwtSubject(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  const tokenSub = req.auth?.payload?.sub;
+  const bodyAuth0Id = req.body?.auth0Id;
+
+  if (typeof bodyAuth0Id !== "string") {
+    next();
+    return;
+  }
+
+  if (tokenSub !== bodyAuth0Id) {
+    res.status(403).json({ error: "Auth0 subject mismatch" });
+    return;
+  }
+
+  next();
+}
+
 router.post(
   "/sync",
-  requireAuth,
+  checkJwt,
+  validateSyncJwtSubject,
   validateBody(callbackSchema),
   async (req, res, next) => {
     try {

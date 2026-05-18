@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, type NavigateFunction } from 'react-router-dom';
 import { Auth0Provider, type AppState } from '@auth0/auth0-react';
 import { type ReactNode } from 'react';
 import { Analytics } from '@vercel/analytics/react';
@@ -29,6 +29,12 @@ import { LoginPage } from './pages/LoginPage';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import { TermsOfServicePage } from './pages/TermsOfServicePage';
 import { NotFoundPage } from './pages/NotFoundPage';
+
+export function scheduleAuth0Redirect(navigate: NavigateFunction, target: string) {
+  window.setTimeout(() => {
+    navigate(target, { replace: true });
+  }, 100);
+}
 
 /**
  * Gate a role-specific dashboard route. While the user is loading, render a
@@ -150,7 +156,7 @@ function Auth0ProviderWithNavigate({ children }: { children: ReactNode }) {
 
   const onRedirectCallback = (appState?: AppState) => {
     const target = appState?.returnTo || '/dashboard';
-    navigate(target, { replace: true });
+    scheduleAuth0Redirect(navigate, target);
   };
 
   return (

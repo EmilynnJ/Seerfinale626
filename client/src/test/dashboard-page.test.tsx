@@ -1,4 +1,3 @@
-import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -30,6 +29,8 @@ function buildAuthState(
     user: null,
     hasSession: false,
     isAuthenticated: false,
+    isAuth0Authenticated: false,
+    auth0Role: null,
     isLoading: false,
     authError: null,
     login: vi.fn(async () => {}),
@@ -44,6 +45,9 @@ function renderDashboard() {
     <MemoryRouter initialEntries={['/dashboard']}>
       <Routes>
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/dashboard/client" element={<div>Client Dashboard Mock</div>} />
+        <Route path="/dashboard/reader" element={<div>Reader Dashboard Mock</div>} />
+        <Route path="/dashboard/admin" element={<div>Admin Dashboard Mock</div>} />
         <Route path="/login" element={<div>Login Route</div>} />
       </Routes>
     </MemoryRouter>,
@@ -60,7 +64,16 @@ describe('dashboard routing', () => {
 
     renderDashboard();
 
-    expect(screen.getByText('Login Route')).toBeInTheDocument();
+    expect(screen.getByText('Login Route')).toBeTruthy();
+  });
+
+  it('waits while Auth0 is still loading before redirecting unauthenticated users', () => {
+    mockUseAuth.mockReturnValue(buildAuthState({ isLoading: true }));
+
+    renderDashboard();
+
+    expect(screen.getByText('Preparing your dashboard...')).toBeTruthy();
+    expect(screen.queryByText('Login Route')).toBeNull();
   });
 
   it('renders the client dashboard for client users', () => {
@@ -87,7 +100,7 @@ describe('dashboard routing', () => {
 
     renderDashboard();
 
-    expect(screen.getByText('Client Dashboard Mock')).toBeInTheDocument();
+    expect(screen.getByText('Client Dashboard Mock')).toBeTruthy();
   });
 
   it('renders the reader dashboard for reader users', () => {
@@ -114,7 +127,7 @@ describe('dashboard routing', () => {
 
     renderDashboard();
 
-    expect(screen.getByText('Reader Dashboard Mock')).toBeInTheDocument();
+    expect(screen.getByText('Reader Dashboard Mock')).toBeTruthy();
   });
 
   it('renders the admin dashboard for admin users', () => {
@@ -141,7 +154,7 @@ describe('dashboard routing', () => {
 
     renderDashboard();
 
-    expect(screen.getByText('Admin Dashboard Mock')).toBeInTheDocument();
+    expect(screen.getByText('Admin Dashboard Mock')).toBeTruthy();
   });
 
   it('shows the recovery state when the profile fails to load', () => {
@@ -154,7 +167,7 @@ describe('dashboard routing', () => {
 
     renderDashboard();
 
-    expect(screen.getByText("We couldn't load your profile")).toBeInTheDocument();
-    expect(screen.getByText('Retry')).toBeInTheDocument();
+    expect(screen.getByText("We couldn't load your profile")).toBeTruthy();
+    expect(screen.getByText('Retry')).toBeTruthy();
   });
 });
