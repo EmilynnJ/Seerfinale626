@@ -15,6 +15,9 @@ const footerLinks = [
 ] as const;
 
 function Footer() {
+  const { isAuthenticated, isAuth0Authenticated, user } = useAuth();
+  const showSignedInUi = isAuth0Authenticated || isAuthenticated || !!user;
+  const profileRoute = user?.id ? `/readers/${user.id}` : '/dashboard';
   const year = new Date().getFullYear();
   const { isAuthenticated, isAuth0Authenticated, user, auth0Role } = useAuth();
   const showSignedInUi = isAuth0Authenticated || isAuthenticated || !!user;
@@ -45,6 +48,13 @@ function Footer() {
                 </Link>
               </li>
             ))}
+            {showSignedInUi && (
+              <li>
+                <Link to="/dashboard" className="footer__link">
+                  Dashboard
+                </Link>
+              </li>
+            )}
             {showSignedInUi && user?.role === 'reader' && (
               <li>
                 <Link to={profileRoute} className="footer__link">

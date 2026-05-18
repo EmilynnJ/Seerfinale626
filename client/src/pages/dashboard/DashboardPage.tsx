@@ -1,5 +1,13 @@
 import { useAuth } from '../../hooks/useAuth';
 import { LoadingPage, Button } from '../../components/ui';
+import { ClientDashboard } from './ClientDashboard';
+import { ReaderDashboard } from './ReaderDashboard';
+import { AdminDashboard } from './AdminDashboard';
+import { Navigate, useLocation } from 'react-router-dom';
+
+export function DashboardPage() {
+  const { user, isAuthenticated, isAuth0Authenticated, isLoading, authError, refreshUser, logout } = useAuth();
+  const location = useLocation();
 import { Navigate } from 'react-router-dom';
 import { dashboardPathForRole } from '../../lib/dashboardRoute';
 
@@ -54,14 +62,29 @@ export function DashboardPage() {
     );
   }
 
-  // If Auth0 says the user is signed in but backend sync is still settling,
-  // keep them on a loading state instead of kicking them back to /login.
+  // If Auth0 says the user is signed in, allow an extra render cycle for
+  // backend sync instead of bouncing them to /login.
   if (isAuth0Authenticated && !user) {
-    return <LoadingPage message="Finalizing your account and dashboard..." />;
+    return <LoadingPage message="Finishing sign-in and loading your dashboard..." />;
   }
 
-  if (!user) {
+  if (!isAuthenticated && !user) {
     return <Navigate to="/login" replace />;
+  }
+
+  const role = user?.role ?? 'client';
+  if (location.pathname === '/dashboard') {
+    return <Navigate to={`/dashboard/${role}`} replace />;
+  }
+
+  switch (role) {
+    case 'admin':
+      return <AdminDashboard />;
+    case 'reader':
+      return <ReaderDashboard />;
+    case 'client':
+    default:
+      return <ClientDashboard />;
   }
 
   // Redirect to the role-specific dashboard URL so deep-links and shared URLs
