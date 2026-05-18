@@ -83,6 +83,8 @@ function Navigation() {
   const mobileLinkClass = ({ isActive }: { isActive: boolean }) =>
     `nav__mobile-link ${isActive ? 'nav__mobile-link--active' : ''}`;
 
+  const isReader = user?.role === 'reader';
+  const profilePath = isReader && user?.id ? `/readers/${user.id}` : null;
   // Only show balance for clients — readers see earnings on their own
   // dashboard, admins don't have a personal balance to surface.
   const showBalance =
@@ -127,18 +129,14 @@ function Navigation() {
               </NavLink>
             </li>
           )}
+          {profilePath && (
+            <li>
+              <NavLink to={profilePath} className={linkClass}>
           {showSignedInUi && user?.role === 'reader' && (
             <li>
               <NavLink to={profileRoute} className={linkClass}>
                 Profile
               </NavLink>
-            </li>
-          )}
-          {showBalance && user && (
-            <li>
-              <span className="nav__balance" aria-label="Account balance">
-                {balanceLabel}
-              </span>
             </li>
           )}
           <li>
@@ -189,6 +187,11 @@ function Navigation() {
         {showSignedInUi && (
           <NavLink to={dashboardHref} className={mobileLinkClass}>
             Dashboard
+          </NavLink>
+        )}
+        {profilePath && (
+          <NavLink to={profilePath} className={mobileLinkClass}>
+            Profile
           </NavLink>
         )}
         {showSignedInUi && user?.role === 'reader' && (

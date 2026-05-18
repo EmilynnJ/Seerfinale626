@@ -48,6 +48,7 @@ function Footer() {
                 </Link>
               </li>
             ))}
+            {isAuthenticated && (
             {showSignedInUi && (
               <li>
                 <Link to="/dashboard" className="footer__link">
@@ -55,13 +56,24 @@ function Footer() {
                 </Link>
               </li>
             )}
-            {showSignedInUi && user?.role === 'reader' && (
+            {profilePath && (
               <li>
-                <Link to={profileRoute} className="footer__link">
+                <Link to={profilePath} className="footer__link">
                   Profile
                 </Link>
               </li>
             )}
+            <li>
+              {isAuthenticated ? (
+                <button type="button" className="footer__link" onClick={() => logout()}>
+                  Sign Out
+                </button>
+              ) : (
+                <button type="button" className="footer__link" onClick={() => login()}>
+                  Sign In
+                </button>
+              )}
+            </li>
           </ul>
         </nav>
 
