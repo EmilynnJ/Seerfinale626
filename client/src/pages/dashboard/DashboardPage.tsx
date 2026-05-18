@@ -3,10 +3,30 @@ import { LoadingPage, Button } from '../../components/ui';
 import { ClientDashboard } from './ClientDashboard';
 import { ReaderDashboard } from './ReaderDashboard';
 import { AdminDashboard } from './AdminDashboard';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 
 export function DashboardPage() {
-  const { user, isAuthenticated, isLoading, authError, refreshUser, logout } = useAuth();
+  const { user, isAuthenticated, isAuth0Authenticated, isLoading, authError, refreshUser, logout } = useAuth();
+  const location = useLocation();
+import { Navigate } from 'react-router-dom';
+import { dashboardPathForRole } from '../../lib/dashboardRoute';
+
+export function DashboardPage() {
+  const {
+    user,
+    isAuth0Authenticated,
+    auth0Role,
+    isLoading,
+    authError,
+    refreshUser,
+    logout,
+  } = useAuth();
+
+  // Instant redirect off the Auth0 role claim — runs before /me settles, so
+  // the user lands on the right dashboard URL without a loading flash.
+  if (isAuth0Authenticated && auth0Role) {
+    return <Navigate to={dashboardPathForRole(auth0Role)} replace />;
+  }
 
   if (isLoading) {
     return <LoadingPage message="Preparing your dashboard..." />;
@@ -42,11 +62,22 @@ export function DashboardPage() {
     );
   }
 
-  if (!isAuthenticated || !user) {
+  // If Auth0 says the user is signed in, allow an extra render cycle for
+  // backend sync instead of bouncing them to /login.
+  if (isAuth0Authenticated && !user) {
+    return <LoadingPage message="Finishing sign-in and loading your dashboard..." />;
+  }
+
+  if (!isAuthenticated && !user) {
     return <Navigate to="/login" replace />;
   }
 
-  switch (user.role) {
+  const role = user?.role ?? 'client';
+  if (location.pathname === '/dashboard') {
+    return <Navigate to={`/dashboard/${role}`} replace />;
+  }
+
+  switch (role) {
     case 'admin':
       return <AdminDashboard />;
     case 'reader':
@@ -55,4 +86,8 @@ export function DashboardPage() {
     default:
       return <ClientDashboard />;
   }
+
+  // Redirect to the role-specific dashboard URL so deep-links and shared URLs
+  // resolve cleanly. RoleRoute on the destination handles guarding.
+  return <Navigate to={dashboardPathForRole(user.role)} replace />;
 }

@@ -37,7 +37,7 @@ class ApiService {
         const data = await res.json();
         errorMessage = data.message || data.error || errorMessage;
       } catch {
-        // ignore parse errors
+        // Keep the status-based fallback when the response body is not JSON.
       }
       throw new Error(errorMessage);
     }
@@ -90,7 +90,7 @@ class ApiService {
         const data = await res.json();
         errorMessage = data.message || data.error || errorMessage;
       } catch {
-        /* ignore parse errors */
+        // Keep the status-based fallback when the response body is not JSON.
       }
       throw new Error(errorMessage);
     }
