@@ -91,7 +91,7 @@ async function main() {
     clientSecret: config.auth0Management.clientSecret,
   });
 
-  for (const spec of SPECS) {
+  await Promise.all(SPECS.map(async (spec) => {
     console.log(`\n── [${spec.label}] ${spec.email} ─────────────────────────`);
 
     // 1) Create (or reuse) the Auth0 user.
@@ -117,11 +117,11 @@ async function main() {
         createBody as Parameters<typeof mgmt.users.create>[0],
       );
       auth0Id = resp.data.user_id ?? null;
-      console.log(`  Auth0 user created: ${auth0Id}`);
+      console.log(`[${spec.label}] Auth0 user created: ${auth0Id}`);
     } catch (err) {
       const status = (err as { statusCode?: number }).statusCode;
       if (status === 409) {
-        console.log('  Auth0 user already exists — looking up…');
+        console.log(`[${spec.label}] Auth0 user already exists — looking up…`);
         const existing = await mgmt.users.listUsersByEmail({ email: spec.email });
         // The SDK sometimes returns the array directly, sometimes wrapped
         // under `.data` depending on version / transport.
@@ -133,24 +133,24 @@ async function main() {
           : [];
         auth0Id = rows[0]?.user_id ?? null;
         if (!auth0Id) {
-          console.error('  Could not resolve Auth0 user_id for existing account');
-          continue;
+          console.error(`[${spec.label}] Could not resolve Auth0 user_id for existing account`);
+          return;
         }
-        console.log(`  Resolved existing Auth0 user: ${auth0Id}`);
+        console.log(`[${spec.label}] Resolved existing Auth0 user: ${auth0Id}`);
         // Make sure the password matches what the caller expects.
         try {
           await mgmt.users.update(auth0Id, { password: spec.password });
-          console.log('  Password updated to the supplied value');
+          console.log(`[${spec.label}] Password updated to the supplied value`);
         } catch (updateErr) {
-          console.warn('  Failed to update password on existing Auth0 user:', updateErr);
+          console.warn(`[${spec.label}] Failed to update password on existing Auth0 user:`, updateErr);
         }
       } else {
-        console.error('  Auth0 user creation failed:', err);
-        continue;
+        console.error(`[${spec.label}] Auth0 user creation failed:`, err);
+        return;
       }
     }
 
-    if (!auth0Id) continue;
+    if (!auth0Id) return;
 
     // 2) Upsert internal DB row with correct role/pricing/balance.
     const role = spec.label === 'admin' ? 'admin' : spec.label === 'reader' ? 'reader' : 'client';
@@ -172,15 +172,15 @@ async function main() {
 
     if (existingDb) {
       await db.update(users).set(patch).where(eq(users.id, existingDb.id));
-      console.log(`  DB row updated (id=${existingDb.id}, role=${role})`);
+      console.log(`[${spec.label}] DB row updated (id=${existingDb.id}, role=${role})`);
     } else {
       const [inserted] = await db
         .insert(users)
         .values({ auth0Id, ...patch })
         .returning({ id: users.id });
-      console.log(`  DB row inserted (id=${inserted?.id}, role=${role})`);
+      console.log(`[${spec.label}] DB row inserted (id=${inserted?.id}, role=${role})`);
     }
-  }
+  }));
 
   console.log('\nDone. All accounts provisioned.');
   await pool.end();
