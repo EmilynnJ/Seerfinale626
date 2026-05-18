@@ -3,6 +3,7 @@
 // ============================================================
 
 import { Link } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 
 const footerLinks = [
   { to: '/about', label: 'About' },
@@ -13,6 +14,9 @@ const footerLinks = [
 
 function Footer() {
   const year = new Date().getFullYear();
+  const { isAuthenticated, user, login, logout } = useAuth();
+  const isReader = user?.role === 'reader';
+  const profilePath = isReader && user?.id ? `/readers/${user.id}` : null;
 
   return (
     <footer className="footer" role="contentinfo">
@@ -30,6 +34,31 @@ function Footer() {
                 </Link>
               </li>
             ))}
+            {isAuthenticated && (
+              <li>
+                <Link to="/dashboard" className="footer__link">
+                  Dashboard
+                </Link>
+              </li>
+            )}
+            {profilePath && (
+              <li>
+                <Link to={profilePath} className="footer__link">
+                  Profile
+                </Link>
+              </li>
+            )}
+            <li>
+              {isAuthenticated ? (
+                <button type="button" className="footer__link" onClick={() => logout()}>
+                  Sign Out
+                </button>
+              ) : (
+                <button type="button" className="footer__link" onClick={() => login()}>
+                  Sign In
+                </button>
+              )}
+            </li>
           </ul>
         </nav>
 

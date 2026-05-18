@@ -69,6 +69,9 @@ function Navigation() {
   const mobileLinkClass = ({ isActive }: { isActive: boolean }) =>
     `nav__mobile-link ${isActive ? 'nav__mobile-link--active' : ''}`;
 
+  const isReader = user?.role === 'reader';
+  const profilePath = isReader && user?.id ? `/readers/${user.id}` : null;
+
   return (
     <nav
       className={`nav ${scrolled ? 'nav--scrolled' : ''}`}
@@ -94,6 +97,13 @@ function Navigation() {
             <li>
               <NavLink to="/dashboard" className={linkClass}>
                 Dashboard
+              </NavLink>
+            </li>
+          )}
+          {profilePath && (
+            <li>
+              <NavLink to={profilePath} className={linkClass}>
+                Profile
               </NavLink>
             </li>
           )}
@@ -147,6 +157,11 @@ function Navigation() {
         {isAuthenticated && (
           <NavLink to="/dashboard" className={mobileLinkClass}>
             Dashboard
+          </NavLink>
+        )}
+        {profilePath && (
+          <NavLink to={profilePath} className={mobileLinkClass}>
+            Profile
           </NavLink>
         )}
 
