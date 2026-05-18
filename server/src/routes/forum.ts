@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, desc, sql, and, count } from "drizzle-orm";
+import { eq, desc, sql, count } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../db/db";
 import { users, forumPosts, forumComments, forumFlags } from "../db/schema";
