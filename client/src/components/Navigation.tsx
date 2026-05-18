@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from './ui';
+import { dashboardPathForRole, formatCents } from '../lib/dashboardRoute';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Home' },
@@ -15,21 +16,34 @@ const NAV_ITEMS = [
 ] as const;
 
 function Navigation() {
-  const { isAuthenticated, isAuth0Authenticated, user, login, logout } = useAuth();
+  const {
+    isAuthenticated,
+    isAuth0Authenticated,
+    user,
+    auth0Role,
+    login,
+    logout,
+    authError,
+  } = useAuth();
+
+  // Show signed-in UI the moment Auth0 confirms the session — don't wait
+  // for the Neon DB sync. The dashboard URL is derived from whichever role
+  // source has resolved first (DB → claim).
   const showSignedInUi = isAuth0Authenticated || isAuthenticated || !!user;
-  const profileRoute = user?.id ? `/readers/${user.id}` : '/dashboard';
+  const effectiveRole = user?.role ?? auth0Role ?? null;
+  const dashboardHref = dashboardPathForRole(effectiveRole);
+  const profileRoute = user?.id ? `/readers/${user.id}` : dashboardHref;
+
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
   const menuRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
 
-  // Close mobile menu on route change
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname]);
 
-  // Prevent body scroll when mobile menu is open
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? 'hidden' : '';
     return () => {
@@ -37,14 +51,12 @@ function Navigation() {
     };
   }, [mobileOpen]);
 
-  // Scroll detection for nav background
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Close mobile menu on outside click
   const handleOutsideClick = useCallback(
     (e: MouseEvent) => {
       if (
@@ -57,7 +69,7 @@ function Navigation() {
         setMobileOpen(false);
       }
     },
-    [mobileOpen]
+    [mobileOpen],
   );
 
   useEffect(() => {
@@ -71,19 +83,35 @@ function Navigation() {
   const mobileLinkClass = ({ isActive }: { isActive: boolean }) =>
     `nav__mobile-link ${isActive ? 'nav__mobile-link--active' : ''}`;
 
+  // Only show balance for clients — readers see earnings on their own
+  // dashboard, admins don't have a personal balance to surface.
+  const showBalance =
+    showSignedInUi && (effectiveRole === 'client' || user?.role === 'client');
+  const balanceLabel = formatCents(user?.balance);
+
   return (
     <nav
       className={`nav ${scrolled ? 'nav--scrolled' : ''}`}
       role="navigation"
       aria-label="Main navigation"
     >
+      {authError && (
+        <div role="alert" className="nav__auth-error">
+          Sign-in problem: {authError}{' '}
+          <button
+            type="button"
+            onClick={() => logout()}
+            className="nav__auth-error-btn"
+          >
+            Reset session
+          </button>
+        </div>
+      )}
       <div className="nav__inner">
-        {/* Brand */}
         <Link to="/" className="nav__brand" aria-label="SoulSeer Home">
           SoulSeer
         </Link>
 
-        {/* Desktop links */}
         <ul className="nav__links">
           {NAV_ITEMS.map((item) => (
             <li key={item.to}>
@@ -94,7 +122,7 @@ function Navigation() {
           ))}
           {showSignedInUi && (
             <li>
-              <NavLink to="/dashboard" className={linkClass}>
+              <NavLink to={dashboardHref} className={linkClass}>
                 Dashboard
               </NavLink>
             </li>
@@ -104,6 +132,13 @@ function Navigation() {
               <NavLink to={profileRoute} className={linkClass}>
                 Profile
               </NavLink>
+            </li>
+          )}
+          {showBalance && user && (
+            <li>
+              <span className="nav__balance" aria-label="Account balance">
+                {balanceLabel}
+              </span>
             </li>
           )}
           <li>
@@ -124,7 +159,6 @@ function Navigation() {
           </li>
         </ul>
 
-        {/* Mobile toggle */}
         <button
           ref={toggleRef}
           className="nav__toggle"
@@ -137,7 +171,6 @@ function Navigation() {
         </button>
       </div>
 
-      {/* Mobile menu */}
       <div
         ref={menuRef}
         id="mobile-nav-menu"
@@ -154,7 +187,7 @@ function Navigation() {
           </NavLink>
         ))}
         {showSignedInUi && (
-          <NavLink to="/dashboard" className={mobileLinkClass}>
+          <NavLink to={dashboardHref} className={mobileLinkClass}>
             Dashboard
           </NavLink>
         )}
@@ -162,6 +195,9 @@ function Navigation() {
           <NavLink to={profileRoute} className={mobileLinkClass}>
             Profile
           </NavLink>
+        )}
+        {showBalance && user && (
+          <p className="nav__mobile-balance">Balance: {balanceLabel}</p>
         )}
 
         <div className="nav__mobile-auth">

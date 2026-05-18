@@ -4,12 +4,14 @@
 
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { dashboardPathForRole } from '../lib/dashboardRoute';
 
 const footerLinks = [
   { to: '/about', label: 'About' },
   { to: '/help', label: 'Help' },
   { to: '/community', label: 'Community' },
   { to: '/privacy', label: 'Privacy Policy' },
+  { to: '/terms', label: 'Terms' },
 ] as const;
 
 function Footer() {
@@ -17,6 +19,11 @@ function Footer() {
   const showSignedInUi = isAuth0Authenticated || isAuthenticated || !!user;
   const profileRoute = user?.id ? `/readers/${user.id}` : '/dashboard';
   const year = new Date().getFullYear();
+  const { isAuthenticated, isAuth0Authenticated, user, auth0Role } = useAuth();
+  const showSignedInUi = isAuth0Authenticated || isAuthenticated || !!user;
+  const effectiveRole = user?.role ?? auth0Role ?? null;
+  const dashboardHref = dashboardPathForRole(effectiveRole);
+  const profileRoute = user?.id ? `/readers/${user.id}` : dashboardHref;
 
   return (
     <footer className="footer" role="contentinfo">
@@ -27,6 +34,13 @@ function Footer() {
 
         <nav aria-label="Footer navigation">
           <ul className="footer__links">
+            {showSignedInUi && (
+              <li>
+                <Link to={dashboardHref} className="footer__link">
+                  Dashboard
+                </Link>
+              </li>
+            )}
             {footerLinks.map((link) => (
               <li key={link.to}>
                 <Link to={link.to} className="footer__link">
