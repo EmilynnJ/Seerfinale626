@@ -1,0 +1,17 @@
+# SoulSeer CODEOWNERS
+# All files default to Emily
+* @Emilynn
+
+# Server/backend
+/server/ @Emilynn
+
+# Client/frontend
+/client/ @Emilynn
+
+# Shared packages
+/shared/ @Emilynn
+
+# Sensitive config files
+.env.example @Emilynn
+Dockerfile @Emilynn
+fly.toml @Emilynn
