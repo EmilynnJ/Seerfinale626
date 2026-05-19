@@ -1,0 +1,31 @@
+# SoulSeer GitLab CI
+# Runs the Auto DevOps security scanners with DAST pointed at the
+# production Vercel deployment. Set DAST_TARGET_URL in
+# Settings > CI/CD > Variables if the URL ever changes.
+
+include:
+  - template: Security/DAST.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Dependency-Scanning.gitlab-ci.yml
+
+variables:
+  DAST_TARGET_URL: "https://soulseerpsychics.vercel.app"
+  # Run a baseline (passive) scan only — no active attack probes
+  # against the live production app.
+  DAST_FULL_SCAN_ENABLED: "false"
+  # Skip the browser-based crawler; a simple passive scan is enough
+  # for the initial launch security baseline.
+  DAST_BROWSER_SCAN: "false"
+
+# Build & test job — runs on every push
+test:
+  image: node:20-alpine
+  stage: test
+  script:
+    - npm ci
+    - npm run build -w shared
+    - npm run build -w server
+  only:
+    - main
+    - merge_requests
