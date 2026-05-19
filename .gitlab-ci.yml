@@ -3,6 +3,12 @@
 # production Vercel deployment. Set DAST_TARGET_URL in
 # Settings > CI/CD > Variables if the URL ever changes.
 
+stages:
+  - build
+  - test
+  - deploy
+  - dast
+
 include:
   - template: Security/DAST.gitlab-ci.yml
   - template: Security/Secret-Detection.gitlab-ci.yml
@@ -11,14 +17,11 @@ include:
 
 variables:
   DAST_TARGET_URL: "https://soulseerpsychics.vercel.app"
-  # Run a baseline (passive) scan only — no active attack probes
-  # against the live production app.
+  # Passive scan only — no active attack probes against the live app.
   DAST_FULL_SCAN_ENABLED: "false"
-  # Skip the browser-based crawler; a simple passive scan is enough
-  # for the initial launch security baseline.
   DAST_BROWSER_SCAN: "false"
 
-# Build & test job — runs on every push
+# Build & test job
 test:
   image: node:20-alpine
   stage: test
