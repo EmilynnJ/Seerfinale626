@@ -1,0 +1,74 @@
+revolte:
+  version: '1.0'
+  project: SoulSeer
+  appName: SoulSeer
+  config:
+    codeReview:
+      summarize: true
+      suggestFixes: true
+      commentStyle: Concise
+    testSuite:
+      command: npm run test
+  workflow:
+    developerWorkflow:
+      enabled: true
+  env:
+    staging:
+      branch: main
+      codeReview: true
+      testSuite: true
+      services:
+        rid_1:
+          type: WEB_APP
+          name: web-app_service
+          entryPoint: index.js
+          properties:
+            indexPage: index.html
+            errorPage: error.html
+            enableCdn: false
+            variables:
+              BASE_URL: /api/v1
+    qa:
+      branch: main
+      codeReview: true
+      testSuite: true
+      services:
+        rid_1:
+          type: WEB_APP
+          name: web-app_service
+          entryPoint: index.js
+          properties:
+            indexPage: index.html
+            errorPage: error.html
+            enableCdn: false
+            variables:
+              BASE_URL: /api/v1
+    production:
+      branch: main
+      codeReview: true
+      testSuite: true
+      services:
+        rid_1:
+          type: WEB_APP
+          name: web-app_service
+          entryPoint: index.js
+          properties:
+            indexPage: index.html
+            errorPage: error.html
+            enableCdn: false
+            variables:
+              BASE_URL: /api/v1
+    preview:
+      codeReview: true
+      testSuite: true
+      services:
+        rid_1:
+          type: WEB_APP
+          name: web-app_service
+          entryPoint: index.js
+          properties:
+            indexPage: index.html
+            errorPage: error.html
+            enableCdn: false
+            variables:
+              BASE_URL: /api/v1
