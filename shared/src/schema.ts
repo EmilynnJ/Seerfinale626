@@ -202,6 +202,45 @@ export const transactions = pgTable(
   }),
 );
 
+// ─── Premium Messages ───────────────────────────────────────────────────────
+// Out-of-session messaging between a client and a reader. Clients message
+// readers for free; a reader may price their reply, in which case the body is
+// locked until the client pays to unlock and read it (60/40 split, like a
+// reading). See launch guide — premium messaging note.
+
+export const messages = pgTable(
+  "messages",
+  {
+    id: serial("id").primaryKey(),
+    senderId: integer("sender_id")
+      .notNull()
+      .references(() => users.id),
+    recipientId: integer("recipient_id")
+      .notNull()
+      .references(() => users.id),
+
+    content: text("content").notNull(),
+
+    // Pricing (cents). 0 = free. Only a reader may set a price on their reply.
+    priceCents: integer("price_cents").notNull().default(0),
+    // For priced messages: whether the recipient has paid to unlock the body.
+    isUnlocked: boolean("is_unlocked").notNull().default(false),
+    unlockedAt: timestamp("unlocked_at", { withTimezone: true }),
+
+    // When the recipient has seen the message (free, or after unlock).
+    readAt: timestamp("read_at", { withTimezone: true }),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    senderIdIdx: index("messages_sender_id_idx").on(table.senderId),
+    recipientIdIdx: index("messages_recipient_id_idx").on(table.recipientId),
+    createdAtIdx: index("messages_created_at_idx").on(table.createdAt),
+  }),
+);
+
 // ─── Forum Posts ────────────────────────────────────────────────────────────
 
 export const forumPosts = pgTable(
@@ -304,6 +343,21 @@ export const usersRelations = relations(users, ({ many }) => ({
   forumPosts: many(forumPosts),
   forumComments: many(forumComments),
   forumFlags: many(forumFlags),
+  sentMessages: many(messages, { relationName: "sentMessages" }),
+  receivedMessages: many(messages, { relationName: "receivedMessages" }),
+}));
+
+export const messagesRelations = relations(messages, ({ one }) => ({
+  sender: one(users, {
+    fields: [messages.senderId],
+    references: [users.id],
+    relationName: "sentMessages",
+  }),
+  recipient: one(users, {
+    fields: [messages.recipientId],
+    references: [users.id],
+    relationName: "receivedMessages",
+  }),
 }));
 
 export const readingsRelations = relations(readings, ({ one, many }) => ({

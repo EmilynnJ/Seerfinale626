@@ -237,6 +237,27 @@ export function ReaderProfilePage() {
               </div>
             )}
           </div>
+
+          {/* ── Premium messaging ── */}
+          <div className="profile-message-cta">
+            <p className="profile-message-cta__hint">
+              Have a quick question? Message {reader.fullName || 'this reader'} directly.
+              Your messages are free — they may charge to unlock a reply.
+            </p>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                if (!isAuthenticated) {
+                  void login();
+                  return;
+                }
+                navigate(`/messages?to=${reader.id}`);
+              }}
+              aria-label="Message this reader"
+            >
+              ✉️ Message {reader.fullName?.split(' ')[0] || 'Reader'}
+            </Button>
+          </div>
         </section>
 
         {/* ── Reviews ────────────────────────────────── */}

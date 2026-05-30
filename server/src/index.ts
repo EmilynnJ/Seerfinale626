@@ -121,6 +121,10 @@ app.use('/api', transactionRoutes);
 // Forum routes
 app.use('/api/forum', forumRoutes);
 
+// Premium messaging routes
+import messageRoutes from './routes/messages';
+app.use('/api/messages', messageRoutes);
+
 // Newsletter routes (public signup)
 import newsletterRoutes from './routes/newsletter';
 app.use('/api/newsletter', newsletterRoutes);

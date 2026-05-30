@@ -78,14 +78,33 @@ npm install
 cp .env.example .env
 # Edit .env with your credentials
 
-# 4. Run database migrations
-npm run db:migrate -w server
+# 4. Sync the database schema (creates/updates all tables in Neon)
+npm run db:push
 
 # 5. Start development servers
 npm run dev
 ```
 
 This starts both the client (port 3000) and server (port 5000) concurrently.
+
+> **Deploying schema changes:** the schema lives in `shared/src/schema.ts` and is
+> applied with `npm run db:push` (Drizzle Kit). After pulling changes that add or
+> alter tables — e.g. the premium-messaging `messages` table — run `npm run db:push`
+> against your production `DATABASE_URL` before the new code is exercised, or those
+> endpoints will error on the missing table.
+
+## ✉️ Premium Messaging
+
+Clients can message any reader for free from the reader's profile or the **Messages**
+page. A reader may price their reply — the body stays locked until the client pays to
+unlock it (60/40 reader/platform split, same as readings). Endpoints:
+
+| Method | Route | Access | Purpose |
+|--------|-------|--------|---------|
+| GET | /api/messages/conversations | Auth | Conversation list |
+| GET | /api/messages/with/:userId | Auth | Thread with a counterpart |
+| POST | /api/messages/with/:userId | Auth | Send a message (readers may set `priceCents`) |
+| POST | /api/messages/:id/unlock | Auth | Pay to unlock & read a priced message |
 
 ## 📝 API Routes
 
