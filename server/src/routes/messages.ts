@@ -1,23 +1,16 @@
 import { Router } from "express";
 import { and, desc, eq, or, sql } from "drizzle-orm";
-import { z } from "zod";
 import { getDb } from "../db/db";
 import { users, messages, transactions } from "../db/schema";
 import { requireAuth } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import { wsService } from "../services/websocket-service";
 import { logger } from "../utils/logger";
+// Reuse the shared validator + revenue split so client/server validation and
+// reading/message payouts share a single source of truth and can't drift.
+import { sendMessageSchema, READER_SHARE } from "@soulseer/shared";
 
 const router = Router();
-
-// Reader keeps 60% of a paid message, platform keeps 40% (matches readings).
-const READER_SHARE = 0.6;
-const MAX_MESSAGE_PRICE_CENTS = 10_000;
-
-const sendSchema = z.object({
-  content: z.string().trim().min(1).max(5000),
-  priceCents: z.coerce.number().int().min(0).max(MAX_MESSAGE_PRICE_CENTS).default(0),
-});
 
 type MessageRow = typeof messages.$inferSelect;
 
@@ -196,7 +189,7 @@ router.get("/with/:userId", requireAuth, async (req, res, next) => {
 router.post(
   "/with/:userId",
   requireAuth,
-  validateBody(sendSchema),
+  validateBody(sendMessageSchema),
   async (req, res, next) => {
     try {
       const db = getDb();

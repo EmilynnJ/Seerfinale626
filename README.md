@@ -91,7 +91,7 @@ This starts both the client (port 3000) and server (port 5000) concurrently.
 > applied with `npm run db:push` (Drizzle Kit). After pulling changes that add or
 > alter tables — e.g. the premium-messaging `messages` table — run `npm run db:push`
 > against your production `DATABASE_URL` before the new code is exercised, or those
-> endpoints will error on the missing table.
+> endpoints will return an error due to the missing table.
 
 ## ✉️ Premium Messaging
 
