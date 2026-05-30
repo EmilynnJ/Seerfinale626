@@ -22,7 +22,18 @@ const app = express();
 
 // Security middleware
 app.use(helmet({
-  contentSecurityPolicy: false, // Disable for SPA compatibility
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https:"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'self'"],
+      upgradeInsecureRequests: [],
+    },
+  },
 }));
 app.use(cors({
   origin: config.corsOrigin.split(',').map((s: string) => s.trim()),
