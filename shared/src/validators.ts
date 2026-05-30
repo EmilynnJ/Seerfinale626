@@ -168,6 +168,14 @@ export const idParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
 
+// ─── Revenue Split ──────────────────────────────────────────────────────────
+
+// Reader keeps 60% of every charge (per-minute readings and paid messages);
+// the platform retains the remaining 40%. Single source of truth shared by the
+// billing service and the messaging routes so the two can never drift apart.
+// Integer cents only at the call sites.
+export const READER_SHARE = 0.6;
+
 // ─── Premium Messaging ──────────────────────────────────────────────────────
 
 // Max a reader may charge to unlock a single message: $100.

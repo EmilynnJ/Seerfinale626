@@ -7,17 +7,26 @@ import { z } from 'zod';
 // AUTH0_CLIENT_SECRET, AUTH0_ALLOWED_URL).
 function pickAuth0Env() {
   const env = process.env;
+  // The browser bundle is configured with the VITE_AUTH0_* names, and on Vercel
+  // those same variables are present in the server runtime too. Read them as a
+  // fallback so the API validates tokens against the EXACT domain/audience the
+  // SPA used to mint them — otherwise the server ends up with a different
+  // (or empty) value and rejects every access token with 401.
   const rawDomain =
     env.AUTH0_DOMAIN ||
     env.AUTH0_DOMAIN_URL ||
     env.AUTH0_ISSUER_BASE_URL ||
+    env.VITE_AUTH0_DOMAIN ||
     '';
   const domain = rawDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
-  // Audience must match the API Identifier the SPA requests tokens for.
-  // Fall back to the Management API audience for the tenant if nothing else
-  // is set — this keeps prod from crashing while the API is being created.
+  // Audience must match the API Identifier the SPA requests tokens for. The SPA
+  // mints tokens with VITE_AUTH0_AUDIENCE, so that is the authoritative source
+  // here. AUTH0_IDENTIFIER is a distinct variable and is only used as a
+  // last-resort alias. Fall back to the Management API audience so prod does
+  // not crash while the API is still being created.
   const audience =
     env.AUTH0_AUDIENCE ||
+    env.VITE_AUTH0_AUDIENCE ||
     env.AUTH0_IDENTIFIER ||
     (domain ? `https://${domain}/api/v2/` : '');
   const mgmtClientId = env.AUTH0_MGMT_CLIENT_ID || env.AUTH0_APP_ID || '';
@@ -26,7 +35,10 @@ function pickAuth0Env() {
   // If CORS_ORIGIN is unset/localhost in production, fall back to the
   // configured Auth0 allowed URL so the deployed frontend can call the API.
   const allowedUrl =
-    (env.AUTH0_ALLOWED_URL || env.AUTH0_BASE_URL || '').replace(/\/$/, '');
+    (env.AUTH0_ALLOWED_URL || env.AUTH0_BASE_URL || env.VITE_AUTH0_REDIRECT_URI || '').replace(
+      /\/$/,
+      '',
+    );
   if (allowedUrl && (!env.CORS_ORIGIN || env.CORS_ORIGIN.includes('localhost'))) {
     env.CORS_ORIGIN = env.CORS_ORIGIN
       ? `${env.CORS_ORIGIN},${allowedUrl}`

@@ -3,13 +3,12 @@ import { getDb } from "../db/db";
 import { users, readings, transactions } from "../db/schema";
 import { wsService } from "./websocket-service";
 import { logger } from "../utils/logger";
+// Revenue split (60% reader / 40% platform) — shared with the messaging routes
+// so reading and message payouts can never drift apart. Integer cents only.
+import { READER_SHARE } from "@soulseer/shared";
 
 const GRACE_PERIOD_MS = 120_000; // 2 minutes
 const SECONDS_PER_MINUTE = 60;
-
-// Revenue split — 60% reader / 40% platform (business decision; overrides the
-// 70/30 figure in the original launch guide). Integer cents only.
-const READER_SHARE = 0.6;
 
 export interface BillingSnapshot {
   readingId: number;
