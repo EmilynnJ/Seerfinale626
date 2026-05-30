@@ -100,6 +100,13 @@ function Navigation() {
               </NavLink>
             </li>
           )}
+          {isAuthenticated && user && (
+            <li>
+              <NavLink to="/messages" className={linkClass}>
+                Messages
+              </NavLink>
+            </li>
+          )}
           {profilePath && (
             <li>
               <NavLink to={profilePath} className={linkClass}>
@@ -157,6 +164,11 @@ function Navigation() {
         {isAuthenticated && user && (
           <NavLink to={`/dashboard/${user.role}`} className={mobileLinkClass}>
             Dashboard
+          </NavLink>
+        )}
+        {isAuthenticated && user && (
+          <NavLink to="/messages" className={mobileLinkClass}>
+            Messages
           </NavLink>
         )}
         {profilePath && (

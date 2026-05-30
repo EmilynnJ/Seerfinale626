@@ -1,0 +1,378 @@
+import { Router } from "express";
+import { and, desc, eq, or, sql } from "drizzle-orm";
+import { z } from "zod";
+import { getDb } from "../db/db";
+import { users, messages, transactions } from "../db/schema";
+import { requireAuth } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import { wsService } from "../services/websocket-service";
+import { logger } from "../utils/logger";
+
+const router = Router();
+
+// Reader keeps 60% of a paid message, platform keeps 40% (matches readings).
+const READER_SHARE = 0.6;
+const MAX_MESSAGE_PRICE_CENTS = 10_000;
+
+const sendSchema = z.object({
+  content: z.string().trim().min(1).max(5000),
+  priceCents: z.coerce.number().int().min(0).max(MAX_MESSAGE_PRICE_CENTS).default(0),
+});
+
+type MessageRow = typeof messages.$inferSelect;
+
+/**
+ * Shape a message row for the viewer. A priced message that has not been
+ * unlocked is redacted for the RECIPIENT (they must pay to read it); the sender
+ * always sees their own content.
+ */
+function presentMessage(m: MessageRow, viewerId: number) {
+  const isLocked = m.priceCents > 0 && !m.isUnlocked;
+  const hideBody = isLocked && m.recipientId === viewerId;
+  return {
+    id: m.id,
+    senderId: m.senderId,
+    recipientId: m.recipientId,
+    content: hideBody ? null : m.content,
+    priceCents: m.priceCents,
+    isLocked,
+    isUnlocked: m.isUnlocked,
+    // Whether THIS viewer still needs to pay to read it.
+    requiresPayment: hideBody,
+    readAt: m.readAt,
+    createdAt: m.createdAt,
+  };
+}
+
+// ─── GET /api/messages/conversations — my conversation list ──────────────────
+router.get("/conversations", requireAuth, async (req, res, next) => {
+  try {
+    const db = getDb();
+    const me = req.user!.id;
+
+    // Pull recent messages involving me, then fold into per-counterpart threads.
+    const rows = await db
+      .select()
+      .from(messages)
+      .where(or(eq(messages.senderId, me), eq(messages.recipientId, me)))
+      .orderBy(desc(messages.createdAt))
+      .limit(500);
+
+    const byCounterpart = new Map<
+      number,
+      { lastMessage: MessageRow; unread: number }
+    >();
+    for (const m of rows) {
+      const other = m.senderId === me ? m.recipientId : m.senderId;
+      const entry = byCounterpart.get(other);
+      if (!entry) {
+        byCounterpart.set(other, { lastMessage: m, unread: 0 });
+      }
+      // Count unread = messages TO me not yet read (locked paid count as unread).
+      if (m.recipientId === me && m.readAt === null) {
+        byCounterpart.get(other)!.unread += 1;
+      }
+    }
+
+    const counterpartIds = [...byCounterpart.keys()];
+    const profiles =
+      counterpartIds.length > 0
+        ? await db
+            .select({
+              id: users.id,
+              fullName: users.fullName,
+              username: users.username,
+              profileImage: users.profileImage,
+              role: users.role,
+            })
+            .from(users)
+            .where(sql`${users.id} = ANY(${counterpartIds})`)
+        : [];
+    const profileMap = new Map(profiles.map((p) => [p.id, p]));
+
+    const conversations = counterpartIds
+      .map((id) => {
+        const { lastMessage, unread } = byCounterpart.get(id)!;
+        const p = profileMap.get(id);
+        const locked =
+          lastMessage.priceCents > 0 &&
+          !lastMessage.isUnlocked &&
+          lastMessage.recipientId === me;
+        return {
+          counterpart: {
+            id,
+            fullName: p?.fullName ?? null,
+            username: p?.username ?? null,
+            profileImage: p?.profileImage ?? null,
+            role: p?.role ?? "client",
+          },
+          unread,
+          lastMessage: {
+            id: lastMessage.id,
+            senderId: lastMessage.senderId,
+            preview: locked ? null : lastMessage.content.slice(0, 120),
+            isLocked: locked,
+            priceCents: lastMessage.priceCents,
+            createdAt: lastMessage.createdAt,
+          },
+        };
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.lastMessage.createdAt).getTime() -
+          new Date(a.lastMessage.createdAt).getTime(),
+      );
+
+    res.json(conversations);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /api/messages/with/:userId — thread with one counterpart ────────────
+router.get("/with/:userId", requireAuth, async (req, res, next) => {
+  try {
+    const db = getDb();
+    const me = req.user!.id;
+    const other = parseInt(req.params.userId ?? "", 10);
+    if (isNaN(other)) {
+      res.status(400).json({ error: "Invalid user ID" });
+      return;
+    }
+
+    const [counterpart] = await db
+      .select({
+        id: users.id,
+        fullName: users.fullName,
+        username: users.username,
+        profileImage: users.profileImage,
+        role: users.role,
+      })
+      .from(users)
+      .where(eq(users.id, other));
+    if (!counterpart) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    const thread = await db
+      .select()
+      .from(messages)
+      .where(
+        or(
+          and(eq(messages.senderId, me), eq(messages.recipientId, other)),
+          and(eq(messages.senderId, other), eq(messages.recipientId, me)),
+        ),
+      )
+      .orderBy(messages.createdAt)
+      .limit(500);
+
+    // Mark visible inbound messages (free, or already unlocked) as read.
+    const toMarkRead = thread
+      .filter(
+        (m) =>
+          m.recipientId === me &&
+          m.readAt === null &&
+          (m.priceCents === 0 || m.isUnlocked),
+      )
+      .map((m) => m.id);
+    if (toMarkRead.length > 0) {
+      await db
+        .update(messages)
+        .set({ readAt: new Date() })
+        .where(sql`${messages.id} = ANY(${toMarkRead})`);
+    }
+
+    res.json({
+      counterpart,
+      messages: thread.map((m) => presentMessage(m, me)),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /api/messages/with/:userId — send a message ────────────────────────
+router.post(
+  "/with/:userId",
+  requireAuth,
+  validateBody(sendSchema),
+  async (req, res, next) => {
+    try {
+      const db = getDb();
+      const me = req.user!;
+      const other = parseInt(req.params.userId ?? "", 10);
+      if (isNaN(other)) {
+        res.status(400).json({ error: "Invalid user ID" });
+        return;
+      }
+      if (other === me.id) {
+        res.status(400).json({ error: "Cannot message yourself" });
+        return;
+      }
+
+      const [recipient] = await db
+        .select({ id: users.id, role: users.role })
+        .from(users)
+        .where(eq(users.id, other));
+      if (!recipient) {
+        res.status(404).json({ error: "Recipient not found" });
+        return;
+      }
+
+      // Premium messaging is between clients and readers only — general
+      // user-to-user DMs are deferred. At least one party must be a reader
+      // (admins may message anyone).
+      const readerInvolved =
+        me.role === "reader" || recipient.role === "reader" || me.role === "admin";
+      if (!readerInvolved) {
+        res.status(403).json({ error: "Messaging is only available with readers" });
+        return;
+      }
+
+      // Only a reader may charge for their reply. Everyone else sends free.
+      const priceCents = me.role === "reader" ? req.body.priceCents : 0;
+
+      const [created] = await db
+        .insert(messages)
+        .values({
+          senderId: me.id,
+          recipientId: other,
+          content: req.body.content,
+          priceCents,
+        })
+        .returning();
+
+      wsService.send(other, "message:new", {
+        messageId: created!.id,
+        senderId: me.id,
+        priceCents,
+      });
+
+      logger.info(
+        { messageId: created!.id, senderId: me.id, recipientId: other, priceCents },
+        "Message sent",
+      );
+
+      res.status(201).json(presentMessage(created!, me.id));
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── POST /api/messages/:id/unlock — pay to read a priced message ────────────
+router.post("/:id/unlock", requireAuth, async (req, res, next) => {
+  try {
+    const db = getDb();
+    const me = req.user!.id;
+    const messageId = parseInt(req.params.id ?? "", 10);
+    if (isNaN(messageId)) {
+      res.status(400).json({ error: "Invalid message ID" });
+      return;
+    }
+
+    let unlocked: MessageRow | null = null;
+    let problem: { status: number; error: string; code?: string } | null = null;
+
+    await db.transaction(async (tx) => {
+      const [m] = await tx
+        .select()
+        .from(messages)
+        .where(eq(messages.id, messageId))
+        .for("update");
+
+      if (!m || m.recipientId !== me) {
+        problem = { status: 404, error: "Message not found" };
+        return;
+      }
+      if (m.priceCents <= 0) {
+        problem = { status: 400, error: "Message is free — no unlock required" };
+        return;
+      }
+      if (m.isUnlocked) {
+        unlocked = m; // already paid — idempotent
+        return;
+      }
+
+      const [client] = await tx
+        .select({ balance: users.balance })
+        .from(users)
+        .where(eq(users.id, me))
+        .for("update");
+      const balance = client?.balance ?? 0;
+      if (balance < m.priceCents) {
+        problem = {
+          status: 402,
+          error: "Insufficient balance to read this message",
+          code: "INSUFFICIENT_BALANCE",
+        };
+        return;
+      }
+
+      const readerShare = Math.floor(m.priceCents * READER_SHARE);
+      const now = new Date();
+
+      // Debit the client.
+      await tx
+        .update(users)
+        .set({ balance: sql`${users.balance} - ${m.priceCents}`, updatedAt: now })
+        .where(eq(users.id, me));
+      await tx.insert(transactions).values({
+        userId: me,
+        type: "reading_charge",
+        amount: -m.priceCents,
+        balanceBefore: balance,
+        balanceAfter: balance - m.priceCents,
+        note: `Unlocked paid message #${messageId}`,
+      });
+
+      // Credit the reader (sender).
+      const [readerBefore] = await tx
+        .select({ balance: users.balance })
+        .from(users)
+        .where(eq(users.id, m.senderId));
+      const [readerAfter] = await tx
+        .update(users)
+        .set({ balance: sql`${users.balance} + ${readerShare}`, updatedAt: now })
+        .where(eq(users.id, m.senderId))
+        .returning({ balance: users.balance });
+      await tx.insert(transactions).values({
+        userId: m.senderId,
+        type: "reader_payout",
+        amount: readerShare,
+        balanceBefore: readerBefore?.balance ?? 0,
+        balanceAfter: readerAfter?.balance ?? 0,
+        note: `Earned from paid message #${messageId}`,
+      });
+
+      const [updated] = await tx
+        .update(messages)
+        .set({ isUnlocked: true, unlockedAt: now, readAt: now })
+        .where(eq(messages.id, messageId))
+        .returning();
+      unlocked = updated!;
+    });
+
+    if (problem) {
+      const p = problem as { status: number; error: string; code?: string };
+      res.status(p.status).json({ error: p.error, ...(p.code ? { code: p.code } : {}) });
+      return;
+    }
+
+    const u = unlocked as MessageRow | null;
+    if (!u) {
+      res.status(500).json({ error: "Unlock failed" });
+      return;
+    }
+
+    wsService.send(u.senderId, "message:unlocked", { messageId: u.id });
+    logger.info({ messageId: u.id, clientId: me }, "Paid message unlocked");
+
+    res.json(presentMessage(u, me));
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default router;

@@ -19,6 +19,8 @@ import { AdminDashboard } from './pages/dashboard/AdminDashboard';
 import { ReaderDashboard } from './pages/dashboard/ReaderDashboard';
 import { ClientDashboard } from './pages/dashboard/ClientDashboard';
 import { ReadingSessionPage } from './pages/reading/ReadingSessionPage';
+import { MessagesPage } from './pages/messages/MessagesPage';
+import { ProtectedRoute } from './components/ProtectedRoute';
 import { AboutPage } from './pages/AboutPage';
 import { HelpPage } from './pages/HelpPage';
 import { LoginPage } from './pages/LoginPage';
@@ -45,6 +47,14 @@ function AppRoutes() {
           <Route path="/dashboard/reader" element={<ReaderDashboard />} />
           <Route path="/dashboard/client" element={<ClientDashboard />} />
           <Route path="/reading/:id" element={<ReadingSessionPage />} />
+          <Route
+            path="/messages"
+            element={
+              <ProtectedRoute>
+                <MessagesPage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/help" element={<HelpPage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -102,7 +112,17 @@ function Auth0ProviderWithNavigate({ children }: { children: ReactNode }) {
       authorizationParams={{
         redirect_uri: redirectUri,
         audience,
+        scope: 'openid profile email offline_access',
       }}
+      // Use rotating refresh tokens instead of silent-iframe auth. Modern
+      // browsers (Safari ITP, Chrome third-party-cookie phase-out) block the
+      // hidden-iframe Auth0 session cookie, which makes getAccessTokenSilently()
+      // fail and the app appear "logged in but broken". Refresh tokens stored in
+      // localStorage survive page reloads and do not depend on third-party
+      // cookies. Requires "Allow Offline Access" enabled on the Auth0 API.
+      useRefreshTokens
+      useRefreshTokensFallback
+      cacheLocation="localstorage"
       onRedirectCallback={onRedirectCallback}
     >
       {children}

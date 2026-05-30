@@ -4,118 +4,272 @@ import { users, readings, transactions } from "../db/schema";
 import { wsService } from "./websocket-service";
 import { logger } from "../utils/logger";
 
-const TICK_INTERVAL_MS = 60_000; // 1 minute
 const GRACE_PERIOD_MS = 120_000; // 2 minutes
+const SECONDS_PER_MINUTE = 60;
 
+// Revenue split — 60% reader / 40% platform (business decision; overrides the
+// 70/30 figure in the original launch guide). Integer cents only.
+const READER_SHARE = 0.6;
+
+export interface BillingSnapshot {
+  readingId: number;
+  status: string;
+  durationSeconds: number;
+  totalCharged: number;
+  readerEarned: number;
+  clientBalance: number;
+  ended: boolean;
+  endReason: "insufficient_balance" | "grace_period_expired" | null;
+}
+
+/**
+ * Server-authoritative pay-per-minute billing.
+ *
+ * Billing is driven by the session heartbeat (POST /api/readings/:id/heartbeat),
+ * which both participants send every ~30s — NOT by a cron job. On each heartbeat
+ * the server computes how many WHOLE minutes have elapsed since the session
+ * started (wall-clock, from the DB `startedAt`) versus how many minutes have
+ * already been billed (`durationSeconds`), and charges the difference inside a
+ * single database transaction. Because the amount is derived from server
+ * timestamps and clamped to real elapsed time, the client can never inflate or
+ * deflate the charge by manipulating tick timing.
+ *
+ * No persistent timer is required, so this works correctly on stateless
+ * serverless (Vercel) where an in-process setInterval would not survive between
+ * invocations.
+ */
 class BillingService {
-  private timer: NodeJS.Timeout | null = null;
-
+  // Kept for the standalone (Fly.io) server entrypoint; no timer is started.
   start(): void {
-    logger.info("Billing service initialized (cron-driven)");
+    logger.info("Billing service initialized (heartbeat-driven, no cron)");
   }
 
   shutdown(): void {
     logger.info("Billing service stopped");
   }
 
-  public async tick(): Promise<void> {
+  /**
+   * Called from the heartbeat route. Sweeps platform-wide stale/expired
+   * sessions, then settles (charges) the heartbeating reading and returns a
+   * fresh billing snapshot the client can render immediately.
+   */
+  async onHeartbeat(
+    readingId: number,
+    now: Date = new Date(),
+  ): Promise<BillingSnapshot | null> {
+    // Opportunistic cleanup — without a cron this is how abandoned sessions get
+    // finalized. Cheap, indexed query on (status, lastHeartbeat/updatedAt).
+    await this.sweepStale(now);
+    return this.settle(readingId, now);
+  }
+
+  /**
+   * Charge any whole minutes owed on a single ACTIVE reading. Atomic and
+   * idempotent: concurrent heartbeats from both participants are serialized with
+   * SELECT ... FOR UPDATE, so a minute is never billed twice. Paused readings
+   * only have their liveness refreshed (no charge).
+   */
+  async settle(
+    readingId: number,
+    now: Date = new Date(),
+  ): Promise<BillingSnapshot | null> {
+    const db = getDb();
+    const out: { snapshot: BillingSnapshot | null } = { snapshot: null };
+    let endInsufficient = false;
+    let clientId = 0;
+    let readerId = 0;
+
+    await db.transaction(async (tx) => {
+      const [r] = await tx
+        .select()
+        .from(readings)
+        .where(eq(readings.id, readingId))
+        .for("update");
+      if (!r) return;
+
+      clientId = r.clientId;
+      readerId = r.readerId;
+
+      // Non-active (paused / accepted / completed …) — refresh liveness only.
+      if (r.status !== "active") {
+        if (r.status === "paused" || r.status === "accepted" || r.status === "in_progress") {
+          await tx
+            .update(readings)
+            .set({ lastHeartbeat: now })
+            .where(eq(readings.id, readingId));
+        }
+        const [c] = await tx
+          .select({ balance: users.balance })
+          .from(users)
+          .where(eq(users.id, r.clientId));
+        out.snapshot = this.toSnapshot(r, c?.balance ?? 0, false, null);
+        return;
+      }
+
+      const rate = r.ratePerMinute;
+      const startedMs = r.startedAt ? r.startedAt.getTime() : now.getTime();
+      const elapsedSeconds = Math.max(
+        0,
+        Math.floor((now.getTime() - startedMs) / 1000),
+      );
+      const owedMinutes =
+        Math.floor(elapsedSeconds / SECONDS_PER_MINUTE) -
+        Math.floor(r.durationSeconds / SECONDS_PER_MINUTE);
+
+      // Nothing to charge yet — just refresh the heartbeat timestamp.
+      if (rate <= 0 || owedMinutes <= 0) {
+        await tx
+          .update(readings)
+          .set({ lastHeartbeat: now })
+          .where(eq(readings.id, readingId));
+        const [c] = await tx
+          .select({ balance: users.balance })
+          .from(users)
+          .where(eq(users.id, r.clientId));
+        out.snapshot = this.toSnapshot(r, c?.balance ?? 0, false, null);
+        return;
+      }
+
+      // Lock the client row and charge as many owed minutes as they can afford.
+      const [client] = await tx
+        .select({ balance: users.balance })
+        .from(users)
+        .where(eq(users.id, r.clientId))
+        .for("update");
+      const balance = client?.balance ?? 0;
+      const affordableMinutes = Math.min(owedMinutes, Math.floor(balance / rate));
+
+      let newDuration = r.durationSeconds;
+      let newTotal = r.totalCharged;
+      let newReaderEarned = r.readerEarned;
+      let newPlatformEarned = r.platformEarned;
+      let newBalance = balance;
+
+      if (affordableMinutes > 0) {
+        const charge = affordableMinutes * rate;
+        const readerSharePerMin = Math.floor(rate * READER_SHARE);
+        const readerShare = readerSharePerMin * affordableMinutes;
+        const platformShare = charge - readerShare;
+
+        newDuration += affordableMinutes * SECONDS_PER_MINUTE;
+        newTotal += charge;
+        newReaderEarned += readerShare;
+        newPlatformEarned += platformShare;
+        newBalance -= charge;
+
+        await tx
+          .update(readings)
+          .set({
+            durationSeconds: newDuration,
+            totalCharged: newTotal,
+            readerEarned: newReaderEarned,
+            platformEarned: newPlatformEarned,
+            lastHeartbeat: now,
+            updatedAt: now,
+          })
+          .where(eq(readings.id, readingId));
+
+        await tx
+          .update(users)
+          .set({ balance: newBalance, updatedAt: now })
+          .where(eq(users.id, r.clientId));
+      } else {
+        await tx
+          .update(readings)
+          .set({ lastHeartbeat: now })
+          .where(eq(readings.id, readingId));
+      }
+
+      // Could not pay for every elapsed minute → terminate after this settle.
+      if (affordableMinutes < owedMinutes) endInsufficient = true;
+
+      out.snapshot = this.toSnapshot(
+        {
+          ...r,
+          durationSeconds: newDuration,
+          totalCharged: newTotal,
+          readerEarned: newReaderEarned,
+        },
+        newBalance,
+        false,
+        null,
+      );
+    });
+
+    if (endInsufficient) {
+      await this.endReading(readingId, "completed", "insufficient_balance");
+      wsService.broadcast([clientId, readerId], "reading:insufficient_balance", {
+        readingId,
+      });
+      logger.info({ readingId }, "Reading ended due to insufficient balance");
+      if (out.snapshot) {
+        out.snapshot.ended = true;
+        out.snapshot.endReason = "insufficient_balance";
+        out.snapshot.status = "completed";
+      }
+    }
+
+    return out.snapshot;
+  }
+
+  /**
+   * Finalize stale/abandoned sessions platform-wide. Active sessions whose
+   * heartbeat lapsed past the grace period (both parties gone) and paused
+   * sessions whose pause exceeded the grace period (reader never returned) are
+   * ended as `missed`.
+   */
+  async sweepStale(now: Date = new Date()): Promise<void> {
     try {
       const db = getDb();
+      const graceCutoff = new Date(now.getTime() - GRACE_PERIOD_MS);
 
-      // 1) Check for stale heartbeats -> missed readings (grace period expired)
-      const graceCutoff = new Date(Date.now() - GRACE_PERIOD_MS);
-      const stale = await db
-        .select()
+      const staleActive = await db
+        .select({ id: readings.id })
         .from(readings)
         .where(
           and(eq(readings.status, "active"), lt(readings.lastHeartbeat, graceCutoff)),
         );
 
-      for (const reading of stale) {
-        await this.endReading(reading.id, "missed", "grace_period_expired");
-        logger.warn({ readingId: reading.id }, "Reading ended due to stale heartbeat (grace period expired)");
-      }
-
-      // 2) Charge active readings per minute
-      const active = await db
-        .select()
+      // Paused sessions are marked at pause time via updatedAt; if the reader
+      // does not come back within the grace window, end the session.
+      const stalePaused = await db
+        .select({ id: readings.id })
         .from(readings)
-        .where(eq(readings.status, "active"));
+        .where(
+          and(eq(readings.status, "paused"), lt(readings.updatedAt, graceCutoff)),
+        );
 
-      for (const reading of active) {
-        await this.chargeMinute(reading);
+      for (const r of [...staleActive, ...stalePaused]) {
+        await this.endReading(r.id, "missed", "grace_period_expired");
+        logger.warn({ readingId: r.id }, "Reading ended (grace period expired)");
       }
     } catch (err) {
-      logger.error({ err }, "Billing tick error");
+      logger.error({ err }, "Billing stale-sweep error");
     }
   }
 
-  private async chargeMinute(
-    reading: typeof readings.$inferSelect,
-  ): Promise<void> {
-    const db = getDb();
-    const rate = reading.ratePerMinute;
-    if (rate <= 0) return;
-
-    // Charge 1 minute atomically — balance check INSIDE the transaction
-    // to prevent race conditions per build guide section 8.4
-    // Modified to 60% reader / 40% platform as requested
-    const readerShare = Math.floor(rate * 0.60);
-    const platformShare = rate - readerShare;
-
-    let insufficientBalance = false;
-
-    await db.transaction(async (tx) => {
-      // Check balance inside the transaction for atomicity
-      const [client] = await tx
-        .select({ balance: users.balance })
-        .from(users)
-        .where(eq(users.id, reading.clientId));
-
-      if (!client || client.balance < rate) {
-        insufficientBalance = true;
-        return; // rollback — no changes made
-      }
-
-      await tx
-        .update(readings)
-        .set({
-          durationSeconds: sql`${readings.durationSeconds} + 60`,
-          totalCharged: sql`${readings.totalCharged} + ${rate}`,
-          readerEarned: sql`${readings.readerEarned} + ${readerShare}`,
-          platformEarned: sql`${readings.platformEarned} + ${platformShare}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(readings.id, reading.id));
-
-      await tx
-        .update(users)
-        .set({
-          balance: sql`${users.balance} - ${rate}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, reading.clientId));
-    });
-
-    if (insufficientBalance) {
-      // End reading outside transaction since endReading has its own transaction
-      await this.endReading(reading.id, "completed", "insufficient_balance");
-      wsService.broadcast(
-        [reading.clientId, reading.readerId],
-        "reading:insufficient_balance",
-        { readingId: reading.id },
-      );
-      logger.info(
-        { readingId: reading.id, rate },
-        "Reading ended due to insufficient balance",
-      );
-      return;
-    }
-
-    logger.debug(
-      { readingId: reading.id, rate, readerShare, platformShare },
-      "Billed 1 minute",
-    );
+  private toSnapshot(
+    r: {
+      id: number;
+      status: string;
+      durationSeconds: number;
+      totalCharged: number;
+      readerEarned: number;
+    },
+    clientBalance: number,
+    ended: boolean,
+    endReason: BillingSnapshot["endReason"],
+  ): BillingSnapshot {
+    return {
+      readingId: r.id,
+      status: r.status,
+      durationSeconds: r.durationSeconds,
+      totalCharged: r.totalCharged,
+      readerEarned: r.readerEarned,
+      clientBalance,
+      ended,
+      endReason,
+    };
   }
 
   private async endReading(
@@ -136,7 +290,8 @@ class BillingService {
       const [fresh] = await tx
         .select()
         .from(readings)
-        .where(eq(readings.id, readingId));
+        .where(eq(readings.id, readingId))
+        .for("update");
 
       if (!fresh || fresh.status === "completed" || fresh.status === "cancelled") {
         return; // Already finalized by another path
@@ -207,19 +362,15 @@ class BillingService {
       .from(readings)
       .where(eq(readings.id, readingId));
 
-    wsService.broadcast(
-      [reading.clientId, reading.readerId],
-      "reading:ended",
-      {
-        readingId,
-        status,
-        reason,
-        durationSeconds: finalized?.durationSeconds ?? reading.durationSeconds ?? 0,
-        totalCharged: finalized?.totalCharged ?? reading.totalCharged ?? 0,
-        readerEarned: finalized?.readerEarned ?? reading.readerEarned ?? 0,
-        ratePerMinute: reading.ratePerMinute,
-      },
-    );
+    wsService.broadcast([reading.clientId, reading.readerId], "reading:ended", {
+      readingId,
+      status,
+      reason,
+      durationSeconds: finalized?.durationSeconds ?? reading.durationSeconds ?? 0,
+      totalCharged: finalized?.totalCharged ?? reading.totalCharged ?? 0,
+      readerEarned: finalized?.readerEarned ?? reading.readerEarned ?? 0,
+      ratePerMinute: reading.ratePerMinute,
+    });
 
     logger.info(
       {
@@ -233,11 +384,10 @@ class BillingService {
   }
 
   /**
-   * Called when a reader toggles offline or their socket closes mid-session.
-   * Pauses all active/accepted/in_progress readings for that reader and
-   * notifies both participants. Billing ticks skip any non-active status so
-   * charging stops immediately. Clients can then choose to end the session
-   * or wait for the reader to come back online.
+   * Reader toggled offline or dropped mid-session. Charge any whole minutes used
+   * up to this moment, then pause all of the reader's live sessions so billing
+   * stops while they're gone. Both participants are notified; clients can wait
+   * for reconnect (resumed within the grace period) or end the session.
    */
   async handleReaderOffline(readerId: number): Promise<void> {
     const db = getDb();
@@ -253,25 +403,37 @@ class BillingService {
         ),
       );
 
-    if (sessions.length > 0) {
+    for (const s of sessions) {
+      // Settle outstanding minutes before pausing so the time actually used is
+      // billed even if the reader never returns.
+      if (s.status === "active") {
+        await this.settle(s.id, now);
+      }
+      // Re-read status — settle may have already ended it (insufficient balance).
+      const [fresh] = await db
+        .select({ status: readings.status })
+        .from(readings)
+        .where(eq(readings.id, s.id));
+      if (
+        !fresh ||
+        fresh.status === "completed" ||
+        fresh.status === "cancelled" ||
+        fresh.status === "missed"
+      ) {
+        continue;
+      }
+
       await db
         .update(readings)
         .set({ status: "paused", updatedAt: now })
-        .where(
-          and(
-            eq(readings.readerId, readerId),
-            inArray(readings.status, ["accepted", "in_progress", "active"] as const),
-          ),
-        );
+        .where(eq(readings.id, s.id));
 
-      for (const s of sessions) {
-        wsService.broadcast(
-          [s.clientId, readerId],
-          "reading:partner_disconnected",
-          { readingId: s.id, partnerRole: "reader", previousStatus: s.status },
-        );
-        logger.info({ readingId: s.id, readerId }, "Reading paused: reader went offline");
-      }
+      wsService.broadcast([s.clientId, readerId], "reading:partner_disconnected", {
+        readingId: s.id,
+        partnerRole: "reader",
+        previousStatus: s.status,
+      });
+      logger.info({ readingId: s.id, readerId }, "Reading paused: reader went offline");
     }
 
     // Also cancel any still-pending requests so the client UI clears them.
@@ -287,12 +449,46 @@ class BillingService {
         .where(and(eq(readings.readerId, readerId), eq(readings.status, "pending")));
 
       for (const p of pending) {
-        wsService.broadcast(
-          [p.clientId, readerId],
-          "reading:cancelled",
-          { readingId: p.id, reason: "reader_offline" },
-        );
+        wsService.broadcast([p.clientId, readerId], "reading:cancelled", {
+          readingId: p.id,
+          reason: "reader_offline",
+        });
       }
+    }
+  }
+
+  /**
+   * Reader came back online within the grace period. Resume their paused
+   * sessions and re-anchor `startedAt` so the time spent paused is NOT billed:
+   * with billed seconds == elapsed seconds at the moment of resume, the next
+   * charge only counts minutes accrued from here forward.
+   */
+  async handleReaderOnline(readerId: number): Promise<void> {
+    const db = getDb();
+    const now = new Date();
+
+    const paused = await db
+      .select({ id: readings.id, clientId: readings.clientId, durationSeconds: readings.durationSeconds })
+      .from(readings)
+      .where(and(eq(readings.readerId, readerId), eq(readings.status, "paused")));
+
+    for (const s of paused) {
+      const reanchoredStart = new Date(now.getTime() - s.durationSeconds * 1000);
+      await db
+        .update(readings)
+        .set({
+          status: "active",
+          startedAt: reanchoredStart,
+          lastHeartbeat: now,
+          updatedAt: now,
+        })
+        .where(and(eq(readings.id, s.id), eq(readings.status, "paused")));
+
+      wsService.broadcast([s.clientId, readerId], "reading:partner_reconnected", {
+        readingId: s.id,
+        partnerRole: "reader",
+      });
+      logger.info({ readingId: s.id, readerId }, "Reading resumed: reader back online");
     }
   }
 }

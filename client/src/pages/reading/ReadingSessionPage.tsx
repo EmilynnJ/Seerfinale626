@@ -611,11 +611,59 @@ export function ReadingSessionPage() {
 
   useEffect(() => {
     if (!isLive || !reading?.id) return;
-    const interval = setInterval(() => {
-      apiService.post(`/api/readings/${reading.id}/heartbeat`).catch(() => {});
-    }, 30_000);
-    return () => clearInterval(interval);
-  }, [isLive, reading?.id]);
+    let cancelled = false;
+
+    // The heartbeat both keeps the session alive AND drives server-side
+    // per-minute billing (there is no cron). The response carries an
+    // authoritative billing snapshot — on serverless deployments without a
+    // live WebSocket this is how the client learns the session was ended by
+    // the server (e.g. the client ran out of balance).
+    const ping = async () => {
+      try {
+        const res = await apiService.post<{
+          ok: boolean;
+          billing?: {
+            durationSeconds: number;
+            totalCharged: number;
+            ended: boolean;
+            endReason: string | null;
+          } | null;
+        }>(`/api/readings/${reading.id}/heartbeat`);
+        if (cancelled) return;
+        const b = res?.billing;
+        if (b?.ended) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          setSummary(
+            (prev) =>
+              prev ?? {
+                duration: b.durationSeconds,
+                totalCost: b.totalCharged / 100,
+                ratePerMinute: (reading.ratePerMinute ?? 0) / 100,
+              },
+          );
+          if (b.endReason === 'insufficient_balance') {
+            addToast(
+              'warning',
+              'Your balance ran out. The session has ended — top up to start a new reading.',
+            );
+          } else if (b.endReason === 'grace_period_expired') {
+            addToast(
+              'warning',
+              'The session ended because the other party did not reconnect in time.',
+            );
+          }
+        }
+      } catch {
+        /* non-fatal — the grace-period sweeper handles prolonged silence */
+      }
+    };
+
+    const interval = setInterval(() => void ping(), 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [isLive, reading?.id, reading?.ratePerMinute, addToast]);
 
   /* ── WebSocket-pushed real-time events for this reading ───────── */
   const readingIdNum = reading?.id ?? null;

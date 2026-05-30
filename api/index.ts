@@ -43,6 +43,8 @@ const webhookRoutes = require('../server/dist/src/routes/webhooks.js').default;
 const applicationRoutes = require('../server/dist/src/routes/applications.js').default;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const newsletterRoutes = require('../server/dist/src/routes/newsletter.js').default;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const messageRoutes = require('../server/dist/src/routes/messages.js').default;
 
 let app: express.Application | null = null;
 
@@ -96,6 +98,7 @@ function createApp() {
   app.use('/api/payments', paymentRoutes);
   app.use('/api/webhooks', webhookRoutes);
   app.use('/api/forum', forumRoutes);
+  app.use('/api/messages', messageRoutes);
   app.use('/api/newsletter', newsletterRoutes);
   app.use('/api/admin', adminRoutes);
   app.use('/api/reader-applications', applicationRoutes);

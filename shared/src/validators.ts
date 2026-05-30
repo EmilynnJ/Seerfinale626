@@ -168,6 +168,24 @@ export const idParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
 
+// ─── Premium Messaging ──────────────────────────────────────────────────────
+
+// Max a reader may charge to unlock a single message: $100.
+export const MAX_MESSAGE_PRICE_CENTS = 10_000;
+
+export const sendMessageSchema = z.object({
+  content: z.string().trim().min(1).max(5000),
+  // Only honored when the sender is a reader; zeroed server-side otherwise.
+  priceCents: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_MESSAGE_PRICE_CENTS)
+    .default(0),
+});
+
+export type SendMessageInput = z.infer<typeof sendMessageSchema>;
+
 // ─── Inferred Input Types ───────────────────────────────────────────────────
 
 export type UserSyncInput = z.infer<typeof userSyncSchema>;

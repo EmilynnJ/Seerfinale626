@@ -225,6 +225,10 @@ router.patch("/readers/status", requireAuth, async (req, res, next) => {
     if (!isOnline) {
       const { billingService } = await import("../services/billing-service");
       await billingService.handleReaderOffline(req.user!.id);
+    } else {
+      // Reader is back online — resume any sessions paused while they were away.
+      const { billingService } = await import("../services/billing-service");
+      await billingService.handleReaderOnline(req.user!.id);
     }
 
     res.json({ isOnline: u!.isOnline });
@@ -413,6 +417,9 @@ router.patch("/me/online", requireAuth, async (req, res, next) => {
     if (!isOnline) {
       const { billingService } = await import("../services/billing-service");
       await billingService.handleReaderOffline(req.user!.id);
+    } else {
+      const { billingService } = await import("../services/billing-service");
+      await billingService.handleReaderOnline(req.user!.id);
     }
 
     res.json({ isOnline: u!.isOnline });
