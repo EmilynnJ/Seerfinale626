@@ -6,14 +6,17 @@
  * contract of each public method and the side-effects emitted to the
  * websocket service:
  *
- *   - handleReaderOffline() pauses all active/accepted/in_progress sessions
- *     for the reader and broadcasts `reading:partner_disconnected` to both
- *     participants. Pending requests are cancelled and broadcast
+ *   - handleReaderOffline() settles then pauses all active/accepted/in_progress
+ *     sessions for the reader and broadcasts `reading:partner_disconnected` to
+ *     both participants. Pending requests are cancelled and broadcast
  *     `reading:cancelled` with reason=reader_offline.
- *   - Revenue-split math follows the build guide: 70% floor reader, 30% to
- *     the platform, integer cents only.
- *   - Grace-period constant is 120s, tick interval is 60s (per build
- *     guide Section 8.4 / 8.5).
+ *   - handleReaderOnline() resumes paused sessions and broadcasts
+ *     `reading:partner_reconnected`.
+ *   - Revenue-split math: 60% floor reader, 40% to the platform, integer cents.
+ *
+ * settle() drives per-minute billing from the session heartbeat (no cron). Its
+ * SELECT ... FOR UPDATE transaction is not exercised by this hand-rolled mock;
+ * it is stubbed in the offline test so we can assert pause/broadcast behavior.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -110,6 +113,12 @@ beforeEach(async () => {
 });
 
 describe('BillingService.handleReaderOffline', () => {
+  beforeEach(() => {
+    // settle() runs a SELECT ... FOR UPDATE transaction the hand-rolled mock
+    // cannot model. Stub it so we can assert the pause/broadcast contract.
+    vi.spyOn(billingService, 'settle').mockResolvedValue(null);
+  });
+
   it('pauses active + in_progress sessions and broadcasts partner_disconnected', async () => {
     const sessions: Row[] = [
       { id: 101, clientId: 7, readerId: 42, status: 'active' },
@@ -117,11 +126,13 @@ describe('BillingService.handleReaderOffline', () => {
     ];
     // Call order inside handleReaderOffline:
     //   1. select active/accepted/in_progress sessions
-    //   2. select pending sessions
-    selectQueue.push(sessions, []);
+    //   2. per session: re-read status (settle may have ended it)
+    //   3. select pending sessions
+    selectQueue.push(sessions, [{ status: 'active' }], [{ status: 'in_progress' }], []);
 
     await billingService.handleReaderOffline(42);
 
+    expect(billingService.settle).toHaveBeenCalledWith(101, expect.any(Date));
     expect(broadcastSpy).toHaveBeenCalledTimes(2);
     expect(broadcastSpy).toHaveBeenNthCalledWith(
       1,
@@ -143,6 +154,16 @@ describe('BillingService.handleReaderOffline', () => {
         previousStatus: 'in_progress',
       }),
     );
+  });
+
+  it('does NOT re-pause a session that settle already finalized', async () => {
+    const sessions: Row[] = [{ id: 110, clientId: 7, readerId: 42, status: 'active' }];
+    // Re-read reports the session was completed (insufficient balance during settle).
+    selectQueue.push(sessions, [{ status: 'completed' }], []);
+
+    await billingService.handleReaderOffline(42);
+
+    expect(broadcastSpy).not.toHaveBeenCalled();
   });
 
   it('cancels pending requests when the reader disconnects and broadcasts reason=reader_offline', async () => {
@@ -171,7 +192,8 @@ describe('BillingService.handleReaderOffline', () => {
   it('handles both active and pending sessions in the same call', async () => {
     const sessions: Row[] = [{ id: 301, clientId: 11, readerId: 42, status: 'active' }];
     const pending: Row[] = [{ id: 302, clientId: 12, readerId: 42, status: 'pending' }];
-    selectQueue.push(sessions, pending);
+    // sessions, re-read status for 301, pending
+    selectQueue.push(sessions, [{ status: 'active' }], pending);
 
     await billingService.handleReaderOffline(42);
 
@@ -184,22 +206,56 @@ describe('BillingService.handleReaderOffline', () => {
   });
 });
 
-describe('Revenue-split math (build guide Section 11.2)', () => {
-  // This mirrors the inline calculation in BillingService.chargeMinute so we
-  // can freeze the contract: 70% floor reader, 30% to platform, integer cents.
+describe('BillingService.handleReaderOnline', () => {
+  it('resumes paused sessions and broadcasts partner_reconnected', async () => {
+    const paused = [
+      { id: 401, clientId: 7, durationSeconds: 180 },
+      { id: 402, clientId: 8, durationSeconds: 0 },
+    ];
+    selectQueue.push(paused);
+
+    await billingService.handleReaderOnline(42);
+
+    expect(broadcastSpy).toHaveBeenCalledTimes(2);
+    expect(broadcastSpy).toHaveBeenNthCalledWith(
+      1,
+      [7, 42],
+      'reading:partner_reconnected',
+      expect.objectContaining({ readingId: 401, partnerRole: 'reader' }),
+    );
+    expect(broadcastSpy).toHaveBeenNthCalledWith(
+      2,
+      [8, 42],
+      'reading:partner_reconnected',
+      expect.objectContaining({ readingId: 402, partnerRole: 'reader' }),
+    );
+  });
+
+  it('is a no-op when the reader has no paused sessions', async () => {
+    selectQueue.push([]);
+
+    await billingService.handleReaderOnline(42);
+
+    expect(broadcastSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('Revenue-split math (60% reader / 40% platform)', () => {
+  // Mirrors the per-minute split in BillingService.settle so we can freeze the
+  // contract: 60% floor reader, 40% to platform, integer cents only.
   function split(ratePerMinute: number) {
-    const readerShare = Math.floor(ratePerMinute * 0.7);
+    const readerShare = Math.floor(ratePerMinute * 0.6);
     const platformShare = ratePerMinute - readerShare;
     return { readerShare, platformShare };
   }
 
-  it('splits 500¢ into 350¢ reader / 150¢ platform', () => {
-    expect(split(500)).toEqual({ readerShare: 350, platformShare: 150 });
+  it('splits 500¢ into 300¢ reader / 200¢ platform', () => {
+    expect(split(500)).toEqual({ readerShare: 300, platformShare: 200 });
   });
 
-  it('splits 333¢ into 233¢ reader / 100¢ platform (Math.floor)', () => {
-    // 333 * 0.7 = 233.1 -> floor 233. Platform takes the rounding remainder.
-    expect(split(333)).toEqual({ readerShare: 233, platformShare: 100 });
+  it('splits 333¢ into 199¢ reader / 134¢ platform (Math.floor)', () => {
+    // 333 * 0.6 = 199.8 -> floor 199. Platform takes the rounding remainder.
+    expect(split(333)).toEqual({ readerShare: 199, platformShare: 134 });
   });
 
   it('splits 1¢ into 0¢ reader / 1¢ platform (platform absorbs sub-cent)', () => {

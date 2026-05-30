@@ -8,6 +8,7 @@ import { requireParticipant } from "../middleware/rbac";
 import { validateBody } from "../middleware/validate";
 import { AgoraService } from "../services/agora-service";
 import { wsService } from "../services/websocket-service";
+import { billingService } from "../services/billing-service";
 import { logger } from "../utils/logger";
 import { strictLimiter } from "../middleware/rate-limit";
 
@@ -387,27 +388,32 @@ router.post(
   },
 );
 
-// ─── POST /api/readings/:id/heartbeat — Keep session alive ──────────────────
+// ─── POST /api/readings/:id/heartbeat — Keep alive + drive per-minute billing ─
 router.post(
   "/:id/heartbeat",
   requireAuth,
   requireParticipant,
   async (req, res, next) => {
     try {
-      const db = getDb();
       const reading = req.reading!;
 
-      if (reading.status !== "active" && reading.status !== "paused") {
+      if (
+        reading.status !== "active" &&
+        reading.status !== "paused" &&
+        reading.status !== "accepted" &&
+        reading.status !== "in_progress"
+      ) {
         res.status(409).json({ error: "Reading is not active" });
         return;
       }
 
-      await db
-        .update(readings)
-        .set({ lastHeartbeat: new Date() })
-        .where(eq(readings.id, reading.id));
+      // Server-authoritative billing: charge any whole minutes elapsed since the
+      // last settle, finalize on insufficient balance, and refresh liveness.
+      // This is what replaces the old Vercel cron — billing advances on the
+      // heartbeat both participants already send every ~30s.
+      const snapshot = await billingService.onHeartbeat(reading.id);
 
-      res.json({ ok: true });
+      res.json({ ok: true, billing: snapshot });
     } catch (err) {
       next(err);
     }
@@ -434,10 +440,17 @@ router.post(
         return;
       }
 
+      // Charge any final whole minutes accrued since the last heartbeat settle,
+      // and finalize on insufficient balance, BEFORE we close the record. After
+      // this the DB holds authoritative billing totals.
+      if (reading.status === "active") {
+        await billingService.settle(reading.id);
+      }
+
       // CRITICAL: Re-fetch the reading inside the transaction to get the latest
-      // billing-service-accumulated totals. Do NOT recalculate from elapsed time
-      // -- the billing service has already been deducting per-minute charges.
-      // We only finalize the record and credit the reader here.
+      // billing-accumulated totals. Do NOT recalculate charges from elapsed time
+      // -- the heartbeat settle has already deducted per-minute charges. We only
+      // finalize the record and credit the reader here.
 
       const now = new Date();
 
@@ -448,21 +461,27 @@ router.post(
         const [fresh] = await tx
           .select()
           .from(readings)
-          .where(eq(readings.id, reading.id));
+          .where(eq(readings.id, reading.id))
+          .for("update");
 
         if (!fresh) throw new Error("Reading not found");
 
-        // Prevent double-finalization
-        if (fresh.status === "completed") {
+        // Prevent double-finalization (heartbeat sweep or insufficient-balance
+        // termination may have already completed it).
+        if (
+          fresh.status === "completed" ||
+          fresh.status === "cancelled" ||
+          fresh.status === "missed"
+        ) {
           finalReading = fresh;
           return;
         }
 
-        const durationSeconds = fresh.startedAt
-          ? Math.floor((now.getTime() - fresh.startedAt.getTime()) / 1000)
-          : fresh.durationSeconds;
+        // Billed seconds are the source of truth for the final duration — the
+        // settle pass above already rounded to whole billed minutes.
+        const durationSeconds = fresh.durationSeconds;
 
-        // Use the already-accumulated totals from the billing service ticks.
+        // Use the already-accumulated totals from the heartbeat settles.
         // These were charged incrementally each minute -- do NOT re-charge.
         const totalCharged = fresh.totalCharged;
         const readerEarned = fresh.readerEarned;

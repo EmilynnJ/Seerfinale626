@@ -21,7 +21,6 @@ import readingRoutes from './routes/readings';
 import paymentRoutes from './routes/payments';
 import forumRoutes from './routes/forum';
 import adminRoutes from './routes/admin';
-import cronRoutes from './routes/cron';
 
 const app = express();
 
@@ -128,9 +127,6 @@ app.use('/api/newsletter', newsletterRoutes);
 
 // Admin routes
 app.use('/api/admin', adminRoutes);
-
-// Cron routes
-app.use('/api/cron', cronRoutes);
 
 // ─── 404 fallback ───────────────────────────────────────────────────────────
 app.use((_req, res) => {
