@@ -102,7 +102,17 @@ function Auth0ProviderWithNavigate({ children }: { children: ReactNode }) {
       authorizationParams={{
         redirect_uri: redirectUri,
         audience,
+        scope: 'openid profile email offline_access',
       }}
+      // Use rotating refresh tokens instead of silent-iframe auth. Modern
+      // browsers (Safari ITP, Chrome third-party-cookie phase-out) block the
+      // hidden-iframe Auth0 session cookie, which makes getAccessTokenSilently()
+      // fail and the app appear "logged in but broken". Refresh tokens stored in
+      // localStorage survive page reloads and do not depend on third-party
+      // cookies. Requires "Allow Offline Access" enabled on the Auth0 API.
+      useRefreshTokens
+      useRefreshTokensFallback
+      cacheLocation="localstorage"
       onRedirectCallback={onRedirectCallback}
     >
       {children}
