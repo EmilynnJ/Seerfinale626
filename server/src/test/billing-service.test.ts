@@ -207,10 +207,14 @@ describe('BillingService.handleReaderOffline', () => {
 });
 
 describe('BillingService.handleReaderOnline', () => {
-  it('resumes paused sessions and broadcasts partner_reconnected', async () => {
+  it('resumes paused sessions whose client is still waiting and broadcasts partner_reconnected', async () => {
+    const recent = new Date();
+    const stale = new Date(Date.now() - 10 * 60_000); // 10m ago, past grace
     const paused = [
-      { id: 401, clientId: 7, durationSeconds: 180 },
-      { id: 402, clientId: 8, durationSeconds: 0 },
+      { id: 401, clientId: 7, durationSeconds: 180, lastHeartbeat: recent },
+      { id: 402, clientId: 8, durationSeconds: 0, lastHeartbeat: recent },
+      // Client also went quiet long ago — must NOT be resurrected.
+      { id: 403, clientId: 9, durationSeconds: 60, lastHeartbeat: stale },
     ];
     selectQueue.push(paused);
 

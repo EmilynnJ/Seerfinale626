@@ -79,6 +79,13 @@ export function MessagesPage() {
   const [unlockingId, setUnlockingId] = useState<number | null>(null);
 
   const threadEndRef = useRef<HTMLDivElement>(null);
+  // Mirror of selectedId for async guards: lets in-flight thread fetches detect
+  // that the user has since switched conversations and bail out instead of
+  // overwriting the now-current thread with a stale response.
+  const selectedIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
   const isReader = user?.role === 'reader';
 
   // Seed the selected conversation from ?to=<userId> (e.g. "Message" button).
@@ -105,11 +112,14 @@ export function MessagesPage() {
     if (showSpinner) setLoadingThread(true);
     try {
       const data = await apiService.get<Thread>(`/api/messages/with/${otherId}`);
+      // Drop the response if the user switched conversations while it was in
+      // flight — otherwise an older request can clobber the current thread.
+      if (selectedIdRef.current !== otherId) return;
       setThread(data);
     } catch {
       /* transient */
     } finally {
-      setLoadingThread(false);
+      if (selectedIdRef.current === otherId) setLoadingThread(false);
     }
   }, []);
 
