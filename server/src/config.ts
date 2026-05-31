@@ -7,11 +7,11 @@ import { z } from 'zod';
 // AUTH0_CLIENT_SECRET, AUTH0_ALLOWED_URL).
 function pickAuth0Env() {
   const env = process.env;
-  // The browser bundle is configured with the VITE_AUTH0_* names, and on Vercel
-  // those same variables are present in the server runtime too. Read them as a
-  // fallback so the API validates tokens against the EXACT domain/audience the
-  // SPA used to mint them — otherwise the server ends up with a different
-  // (or empty) value and rejects every access token with 401.
+  // Prefer the canonical server names, but fall back to the VITE_AUTH0_* values
+  // (present in the Vercel runtime too) so the API validates tokens against the
+  // EXACT domain/audience the SPA used to mint them. Without this the server can
+  // end up with an empty domain or an audience that differs from the token's
+  // `aud`, and every request 401s — which surfaces as "login bounces to home".
   const rawDomain =
     env.AUTH0_DOMAIN ||
     env.AUTH0_DOMAIN_URL ||
@@ -19,11 +19,10 @@ function pickAuth0Env() {
     env.VITE_AUTH0_DOMAIN ||
     '';
   const domain = rawDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
-  // Audience must match the API Identifier the SPA requests tokens for. The SPA
-  // mints tokens with VITE_AUTH0_AUDIENCE, so that is the authoritative source
-  // here. AUTH0_IDENTIFIER is a distinct variable and is only used as a
-  // last-resort alias. Fall back to the Management API audience so prod does
-  // not crash while the API is still being created.
+  // The SPA mints tokens with VITE_AUTH0_AUDIENCE, so that is the authoritative
+  // source. AUTH0_IDENTIFIER is a distinct variable and is only a last-resort
+  // alias. Fall back to the Management API audience so prod does not crash while
+  // the API is still being created.
   const audience =
     env.AUTH0_AUDIENCE ||
     env.VITE_AUTH0_AUDIENCE ||
