@@ -7,7 +7,9 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 import { AppError } from '../middleware/error-handler';
 
-const stripe = new Stripe(config.stripe.secretKey, { apiVersion: '2024-06-20' as any });
+const stripe = new Stripe(config.stripe.secretKey, {
+  apiVersion: '2024-06-20' as Stripe.LatestApiVersion,
+});
 
 export async function createPaymentIntent(userId: number, amountCents: number) {
   const db = getDb();

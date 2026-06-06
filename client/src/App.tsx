@@ -21,6 +21,7 @@ import { ClientDashboard } from './pages/dashboard/ClientDashboard';
 import { ReadingSessionPage } from './pages/reading/ReadingSessionPage';
 import { MessagesPage } from './pages/messages/MessagesPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { RoleRoute } from './components/RoleRoute';
 import { AboutPage } from './pages/AboutPage';
 import { HelpPage } from './pages/HelpPage';
 import { LoginPage } from './pages/LoginPage';
@@ -43,9 +44,30 @@ function AppRoutes() {
           <Route path="/readers/:id" element={<ReaderProfilePage />} />
           <Route path="/community" element={<CommunityHubPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/dashboard/admin" element={<AdminDashboard />} />
-          <Route path="/dashboard/reader" element={<ReaderDashboard />} />
-          <Route path="/dashboard/client" element={<ClientDashboard />} />
+          <Route
+            path="/dashboard/admin"
+            element={
+              <RoleRoute allow={['admin']}>
+                <AdminDashboard />
+              </RoleRoute>
+            }
+          />
+          <Route
+            path="/dashboard/reader"
+            element={
+              <RoleRoute allow={['reader']}>
+                <ReaderDashboard />
+              </RoleRoute>
+            }
+          />
+          <Route
+            path="/dashboard/client"
+            element={
+              <RoleRoute allow={['client']}>
+                <ClientDashboard />
+              </RoleRoute>
+            }
+          />
           <Route path="/reading/:id" element={<ReadingSessionPage />} />
           <Route
             path="/messages"
