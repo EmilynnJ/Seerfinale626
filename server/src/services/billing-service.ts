@@ -107,7 +107,11 @@ class BillingService {
           r.status === "completed" ||
           r.status === "cancelled" ||
           r.status === "missed";
-        out.snapshot = this.toSnapshot(r, c?.balance ?? 0, terminal, null);
+        // "missed" means the grace-period sweep ended it; surface that reason so
+        // the client shows the right toast. Other terminal states have no
+        // billing-specific end reason knowable from status alone.
+        const endReason = r.status === "missed" ? "grace_period_expired" : null;
+        out.snapshot = this.toSnapshot(r, c?.balance ?? 0, terminal, endReason);
         return;
       }
 
@@ -478,6 +482,7 @@ class BillingService {
         clientId: readings.clientId,
         durationSeconds: readings.durationSeconds,
         lastHeartbeat: readings.lastHeartbeat,
+        updatedAt: readings.updatedAt,
       })
       .from(readings)
       .where(and(eq(readings.readerId, readerId), eq(readings.status, "paused")));
@@ -489,7 +494,10 @@ class BillingService {
       // client's heartbeat also went quiet past the grace window the session is
       // abandoned (the paused-sweep will finalize it); resuming it here would
       // resurrect a stale session and start billing a client who has left.
-      const lastBeat = s.lastHeartbeat ? s.lastHeartbeat.getTime() : 0;
+      // lastHeartbeat is nullable — a session paused before its first heartbeat
+      // has none, so fall back to updatedAt (the pause timestamp) to avoid
+      // permanently skipping a freshly-paused session.
+      const lastBeat = (s.lastHeartbeat ?? s.updatedAt)?.getTime() ?? 0;
       if (lastBeat < resumeCutoff) continue;
 
       const reanchoredStart = new Date(now.getTime() - s.durationSeconds * 1000);
