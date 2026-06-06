@@ -18,7 +18,7 @@
  * SELECT ... FOR UPDATE transaction is not exercised by this hand-rolled mock;
  * it is stubbed in the offline test so we can assert pause/broadcast behavior.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const broadcastSpy = vi.fn();
 const sendSpy = vi.fn();
@@ -55,7 +55,13 @@ const state: {
 function makeSelectChain(result: unknown) {
   const chain: Record<string, unknown> = {};
   chain.from = () => chain;
-  chain.where = () => Promise.resolve(result);
+  chain.where = () => {
+    // Real promise (so `await ...where()` works) that also exposes `.for()`
+    // for the `SELECT ... FOR UPDATE` calls inside settle().
+    const p = Promise.resolve(result) as Promise<unknown> & { for: () => Promise<unknown> };
+    p.for = () => Promise.resolve(result);
+    return p;
+  };
   return chain;
 }
 
@@ -117,6 +123,12 @@ describe('BillingService.handleReaderOffline', () => {
     // settle() runs a SELECT ... FOR UPDATE transaction the hand-rolled mock
     // cannot model. Stub it so we can assert the pause/broadcast contract.
     vi.spyOn(billingService, 'settle').mockResolvedValue(null);
+  });
+
+  // Restore the real settle() so later suites that exercise it directly aren't
+  // left with this stub.
+  afterEach(() => {
+    vi.mocked(billingService.settle).mockRestore();
   });
 
   it('pauses active + in_progress sessions and broadcasts partner_disconnected', async () => {
@@ -207,16 +219,27 @@ describe('BillingService.handleReaderOffline', () => {
 });
 
 describe('BillingService.handleReaderOnline', () => {
-  it('resumes paused sessions and broadcasts partner_reconnected', async () => {
+  it('resumes only sessions still within grace (incl. null heartbeat w/ recent pause) and skips stale ones', async () => {
+    const recent = new Date();
+    const withinGrace = new Date(Date.now() - 60_000); // 1m ago, < 2m grace
+    const stale = new Date(Date.now() - 10 * 60_000); // 10m ago, past grace
     const paused = [
-      { id: 401, clientId: 7, durationSeconds: 180 },
-      { id: 402, clientId: 8, durationSeconds: 0 },
+      // 401, 402 fresh heartbeat → resume
+      { id: 401, clientId: 7, durationSeconds: 180, lastHeartbeat: recent, updatedAt: recent },
+      { id: 402, clientId: 8, durationSeconds: 0, lastHeartbeat: withinGrace, updatedAt: withinGrace },
+      // 403 client went quiet long ago → must NOT be resurrected
+      { id: 403, clientId: 9, durationSeconds: 60, lastHeartbeat: stale, updatedAt: stale },
+      // 404 paused before any heartbeat but recently → updatedAt fallback → resume
+      { id: 404, clientId: 10, durationSeconds: 30, lastHeartbeat: null, updatedAt: recent },
+      // 405 null heartbeat AND paused long ago → must NOT be resumed
+      { id: 405, clientId: 11, durationSeconds: 30, lastHeartbeat: null, updatedAt: stale },
     ];
     selectQueue.push(paused);
 
     await billingService.handleReaderOnline(42);
 
-    expect(broadcastSpy).toHaveBeenCalledTimes(2);
+    // Only 401, 402, 404 are within grace; 403 and 405 are stale.
+    expect(broadcastSpy).toHaveBeenCalledTimes(3);
     expect(broadcastSpy).toHaveBeenNthCalledWith(
       1,
       [7, 42],
@@ -229,6 +252,23 @@ describe('BillingService.handleReaderOnline', () => {
       'reading:partner_reconnected',
       expect.objectContaining({ readingId: 402, partnerRole: 'reader' }),
     );
+    expect(broadcastSpy).toHaveBeenNthCalledWith(
+      3,
+      [10, 42],
+      'reading:partner_reconnected',
+      expect.objectContaining({ readingId: 404, partnerRole: 'reader' }),
+    );
+    // Negative assertions: stale sessions are never resumed/broadcast.
+    expect(broadcastSpy).not.toHaveBeenCalledWith(
+      [9, 42],
+      'reading:partner_reconnected',
+      expect.anything(),
+    );
+    expect(broadcastSpy).not.toHaveBeenCalledWith(
+      [11, 42],
+      'reading:partner_reconnected',
+      expect.anything(),
+    );
   });
 
   it('is a no-op when the reader has no paused sessions', async () => {
@@ -237,6 +277,57 @@ describe('BillingService.handleReaderOnline', () => {
     await billingService.handleReaderOnline(42);
 
     expect(broadcastSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('BillingService.settle terminal snapshot', () => {
+  it('reports ended:true with grace_period_expired for a missed reading', async () => {
+    // 1st select: the reading row (FOR UPDATE); 2nd: the client balance.
+    selectQueue.push([
+      {
+        id: 700,
+        clientId: 5,
+        readerId: 9,
+        status: 'missed',
+        ratePerMinute: 100,
+        totalCharged: 300,
+        readerEarned: 180,
+        platformEarned: 120,
+        durationSeconds: 180,
+        startedAt: new Date(),
+      },
+    ]);
+    selectQueue.push([{ balance: 1000 }]);
+
+    const snap = await billingService.settle(700);
+
+    expect(snap).not.toBeNull();
+    expect(snap!.ended).toBe(true);
+    expect(snap!.endReason).toBe('grace_period_expired');
+    expect(snap!.status).toBe('missed');
+  });
+
+  it('reports ended:true with no end reason for a completed reading', async () => {
+    selectQueue.push([
+      {
+        id: 701,
+        clientId: 6,
+        readerId: 9,
+        status: 'completed',
+        ratePerMinute: 100,
+        totalCharged: 200,
+        readerEarned: 120,
+        platformEarned: 80,
+        durationSeconds: 120,
+        startedAt: new Date(),
+      },
+    ]);
+    selectQueue.push([{ balance: 500 }]);
+
+    const snap = await billingService.settle(701);
+
+    expect(snap!.ended).toBe(true);
+    expect(snap!.endReason).toBeNull();
   });
 });
 

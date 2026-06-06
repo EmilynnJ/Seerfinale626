@@ -442,10 +442,12 @@ router.post(
 
       // Charge any final whole minutes accrued since the last heartbeat settle,
       // and finalize on insufficient balance, BEFORE we close the record. After
-      // this the DB holds authoritative billing totals.
-      if (reading.status === "active") {
-        await billingService.settle(reading.id);
-      }
+      // this the DB holds authoritative billing totals. Call settle()
+      // unconditionally rather than gating on the (possibly stale) req.reading
+      // snapshot — settle() re-reads the row FOR UPDATE and only charges when it
+      // is genuinely active, so gating here risks skipping the final charge and
+      // undercharging the session.
+      await billingService.settle(reading.id);
 
       // CRITICAL: Re-fetch the reading inside the transaction to get the latest
       // billing-accumulated totals. Do NOT recalculate charges from elapsed time

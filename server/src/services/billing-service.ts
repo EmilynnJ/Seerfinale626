@@ -101,7 +101,17 @@ class BillingService {
           .select({ balance: users.balance })
           .from(users)
           .where(eq(users.id, r.clientId));
-        out.snapshot = this.toSnapshot(r, c?.balance ?? 0, false, null);
+        // Terminal statuses must report ended:true so a polling client stops
+        // polling and renders the session summary instead of spinning forever.
+        const terminal =
+          r.status === "completed" ||
+          r.status === "cancelled" ||
+          r.status === "missed";
+        // "missed" means the grace-period sweep ended it; surface that reason so
+        // the client shows the right toast. Other terminal states have no
+        // billing-specific end reason knowable from status alone.
+        const endReason = r.status === "missed" ? "grace_period_expired" : null;
+        out.snapshot = this.toSnapshot(r, c?.balance ?? 0, terminal, endReason);
         return;
       }
 
@@ -467,11 +477,29 @@ class BillingService {
     const now = new Date();
 
     const paused = await db
-      .select({ id: readings.id, clientId: readings.clientId, durationSeconds: readings.durationSeconds })
+      .select({
+        id: readings.id,
+        clientId: readings.clientId,
+        durationSeconds: readings.durationSeconds,
+        lastHeartbeat: readings.lastHeartbeat,
+        updatedAt: readings.updatedAt,
+      })
       .from(readings)
       .where(and(eq(readings.readerId, readerId), eq(readings.status, "paused")));
 
+    const resumeCutoff = now.getTime() - GRACE_PERIOD_MS;
+
     for (const s of paused) {
+      // Only resume sessions the client is still actively waiting on. If the
+      // client's heartbeat also went quiet past the grace window the session is
+      // abandoned (the paused-sweep will finalize it); resuming it here would
+      // resurrect a stale session and start billing a client who has left.
+      // lastHeartbeat is nullable — a session paused before its first heartbeat
+      // has none, so fall back to updatedAt (the pause timestamp) to avoid
+      // permanently skipping a freshly-paused session.
+      const lastBeat = (s.lastHeartbeat ?? s.updatedAt)?.getTime() ?? 0;
+      if (lastBeat < resumeCutoff) continue;
+
       const reanchoredStart = new Date(now.getTime() - s.durationSeconds * 1000);
       await db
         .update(readings)

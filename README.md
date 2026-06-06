@@ -137,7 +137,7 @@ See `docs/BUILD_GUIDE.md` for full API reference.
 
 - Clients prepay by adding funds to their account balance
 - Per-minute billing during reading sessions
-- 70/30 revenue split: readers keep 70%, platform retains 30%
+- 60/40 revenue split: readers keep 60%, platform retains 40%
 - Reader payouts via Stripe Connect
 
 ## 📋 License

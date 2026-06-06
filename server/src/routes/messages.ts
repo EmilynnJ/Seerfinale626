@@ -161,19 +161,22 @@ router.get("/with/:userId", requireAuth, async (req, res, next) => {
       .limit(500);
 
     // Mark visible inbound messages (free, or already unlocked) as read.
-    const toMarkRead = thread
-      .filter(
-        (m) =>
-          m.recipientId === me &&
-          m.readAt === null &&
-          (m.priceCents === 0 || m.isUnlocked),
-      )
-      .map((m) => m.id);
+    const now = new Date();
+    const toMarkRead = thread.filter(
+      (m) =>
+        m.recipientId === me &&
+        m.readAt === null &&
+        (m.priceCents === 0 || m.isUnlocked),
+    );
     if (toMarkRead.length > 0) {
+      const ids = toMarkRead.map((m) => m.id);
       await db
         .update(messages)
-        .set({ readAt: new Date() })
-        .where(sql`${messages.id} = ANY(${toMarkRead})`);
+        .set({ readAt: now })
+        .where(sql`${messages.id} = ANY(${ids})`);
+      // Reflect the update in the rows we serialize back, otherwise the client
+      // sees stale readAt: null for messages we just marked read.
+      for (const m of toMarkRead) m.readAt = now;
     }
 
     res.json({
@@ -303,6 +306,13 @@ router.post("/:id/unlock", requireAuth, async (req, res, next) => {
         return;
       }
 
+      // The client is debited the full price; the reader is credited 60%. The
+      // remaining 40% is the platform's revenue and is intentionally NOT moved
+      // into any user wallet — it is retained from the funds the client already
+      // paid in via Stripe. This mirrors the per-minute readings flow (which
+      // likewise debits the full charge and credits the reader 60%, tracking the
+      // 40% as platformEarned), so total wallet balances shrinking by the
+      // platform cut on each unlock is expected, not lost money.
       const readerShare = Math.floor(m.priceCents * READER_SHARE);
       const now = new Date();
 
@@ -320,22 +330,21 @@ router.post("/:id/unlock", requireAuth, async (req, res, next) => {
         note: `Unlocked paid message #${messageId}`,
       });
 
-      // Credit the reader (sender).
-      const [readerBefore] = await tx
-        .select({ balance: users.balance })
-        .from(users)
-        .where(eq(users.id, m.senderId));
+      // Credit the reader (sender). Derive balanceBefore from the atomic
+      // UPDATE ... RETURNING result rather than a separate unlocked SELECT, so
+      // a concurrent payout to the same reader can't corrupt the snapshot.
       const [readerAfter] = await tx
         .update(users)
         .set({ balance: sql`${users.balance} + ${readerShare}`, updatedAt: now })
         .where(eq(users.id, m.senderId))
         .returning({ balance: users.balance });
+      const readerNewBalance = readerAfter?.balance ?? 0;
       await tx.insert(transactions).values({
         userId: m.senderId,
         type: "reader_payout",
         amount: readerShare,
-        balanceBefore: readerBefore?.balance ?? 0,
-        balanceAfter: readerAfter?.balance ?? 0,
+        balanceBefore: readerNewBalance - readerShare,
+        balanceAfter: readerNewBalance,
         note: `Earned from paid message #${messageId}`,
       });
 
