@@ -98,7 +98,11 @@ function loadConfig() {
       .map((i) => `  ${i.path.join('.')}: ${i.message}`)
       .join('\n');
     console.error(`\n❌ Invalid environment variables:\n${formatted}\n`);
-    process.exit(1);
+    // Throw (instead of process.exit) so callers — notably the Vercel
+    // serverless wrapper — can catch this at boot and surface the missing
+    // variable names as a readable 500 response instead of an uncatchable
+    // FUNCTION_INVOCATION_FAILED crash.
+    throw new Error(`Invalid environment variables:\n${formatted}`);
   }
   return parsed.data;
 }
