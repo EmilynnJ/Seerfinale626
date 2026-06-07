@@ -14,42 +14,33 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 
-// Static imports from compiled server output. Requires `npm run build -w shared`
-// and `npm run build -w server` to have run first (handled by the root
-// "build" script, which Vercel executes per vercel.json).
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { config } = require('../server/dist/src/config.js');
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { generalLimiter, webhookLimiter } = require('../server/dist/src/middleware/rate-limit.js');
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { globalErrorHandler } = require('../server/dist/src/middleware/error-handler.js');
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const authRoutes = require('../server/dist/src/routes/auth.js').default;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const userRoutes = require('../server/dist/src/routes/users.js').default;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const readingRoutes = require('../server/dist/src/routes/readings.js').default;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const paymentRoutes = require('../server/dist/src/routes/payments.js').default;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const forumRoutes = require('../server/dist/src/routes/forum.js').default;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const adminRoutes = require('../server/dist/src/routes/admin.js').default;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const transactionRoutes = require('../server/dist/src/routes/transactions.js').default;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const webhookRoutes = require('../server/dist/src/routes/webhooks.js').default;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const applicationRoutes = require('../server/dist/src/routes/applications.js').default;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const newsletterRoutes = require('../server/dist/src/routes/newsletter.js').default;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const messageRoutes = require('../server/dist/src/routes/messages.js').default;
-
 let app: express.Application | null = null;
 
 function createApp() {
   if (app) return app;
+
+  // Require the compiled server output lazily, INSIDE createApp (which the
+  // handler calls within a try/catch). config.js validates env vars on load
+  // and throws if any are missing; doing this here means that failure surfaces
+  // as a readable JSON 500 (naming the missing variable) instead of an
+  // uncatchable process.exit / FUNCTION_INVOCATION_FAILED at module load.
+  // Requires `npm run build` to have produced server/dist (per vercel.json).
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { config } = require('../server/dist/src/config.js');
+  const { generalLimiter, webhookLimiter } = require('../server/dist/src/middleware/rate-limit.js');
+  const { globalErrorHandler } = require('../server/dist/src/middleware/error-handler.js');
+  const authRoutes = require('../server/dist/src/routes/auth.js').default;
+  const userRoutes = require('../server/dist/src/routes/users.js').default;
+  const readingRoutes = require('../server/dist/src/routes/readings.js').default;
+  const paymentRoutes = require('../server/dist/src/routes/payments.js').default;
+  const forumRoutes = require('../server/dist/src/routes/forum.js').default;
+  const adminRoutes = require('../server/dist/src/routes/admin.js').default;
+  const transactionRoutes = require('../server/dist/src/routes/transactions.js').default;
+  const webhookRoutes = require('../server/dist/src/routes/webhooks.js').default;
+  const applicationRoutes = require('../server/dist/src/routes/applications.js').default;
+  const newsletterRoutes = require('../server/dist/src/routes/newsletter.js').default;
+  const messageRoutes = require('../server/dist/src/routes/messages.js').default;
+  /* eslint-enable @typescript-eslint/no-require-imports */
 
   app = express();
 
@@ -117,8 +108,9 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     const expressApp = createApp();
     return expressApp(req as unknown as express.Request, res as unknown as express.Response);
   } catch (err) {
-    // Surface boot errors as 500 JSON instead of a generic crash so the client
-    // can show a useful error.
+    // Surface boot errors (e.g. missing/invalid env vars from config.js) as a
+    // readable 500 JSON instead of a generic FUNCTION_INVOCATION_FAILED crash,
+    // so the exact misconfiguration is visible in the API response.
     console.error('[api] createApp failed:', err);
     res.status(500).json({
       error: 'API boot failure',
