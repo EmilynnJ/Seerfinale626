@@ -4,13 +4,23 @@ import react from '@vitejs/plugin-react';
 // Hoist non-VITE_-prefixed Auth0 vars (AUTH0_DOMAIN_URL, AUTH0_ISSUER_BASE_URL,
 // AUTH0_IDENTIFIER, AUTH0_ALLOWED_URL) into the VITE_AUTH0_* names the client
 // reads, so a single Vercel env var works for both server and client.
+//
+// These three values (domain, SPA client id, API audience) are PUBLIC — they
+// ship in the browser bundle by design. We hard-code the production values as a
+// LAST-RESORT fallback so that a missing/misnamed/renamed env var (or an env
+// var that simply doesn't reach the client build) can never blank them out and
+// break login. Any env var, if present, still takes precedence.
+const FALLBACK_AUTH0_DOMAIN = 'dev-2x1dti3irhuz62jc.us.auth0.com';
+const FALLBACK_AUTH0_CLIENT_ID = 'Y3GGfwjZGjf4xEYDgAfqEeK9CiFMf4qg';
+const FALLBACK_AUTH0_AUDIENCE = 'https://soulseerpsychics.vercel.app';
+
 function deriveClientAuth0Env(env: Record<string, string>) {
   const domainSource =
     env.VITE_AUTH0_DOMAIN ||
     env.AUTH0_DOMAIN ||
     env.AUTH0_DOMAIN_URL ||
     env.AUTH0_ISSUER_BASE_URL ||
-    '';
+    FALLBACK_AUTH0_DOMAIN;
   const domain = domainSource.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
   // SPA Client ID — the PUBLIC client id of the Single-Page-App Auth0
@@ -23,13 +33,13 @@ function deriveClientAuth0Env(env: Record<string, string>) {
     env.VITE_AUTH0_CLIENT_ID ||
     env.AUTH0_SPA_CLIENT_ID ||
     env.AUTH0_CLIENT_ID ||
-    '';
+    FALLBACK_AUTH0_CLIENT_ID;
 
   const audience =
     env.VITE_AUTH0_AUDIENCE ||
     env.AUTH0_AUDIENCE ||
     env.AUTH0_IDENTIFIER ||
-    (domain ? `https://${domain}/api/v2/` : '');
+    FALLBACK_AUTH0_AUDIENCE;
 
   const redirectUri = (
     env.VITE_AUTH0_REDIRECT_URI ||
