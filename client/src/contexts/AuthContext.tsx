@@ -36,24 +36,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       apiService.setAccessToken(token);
 
       // First try /me — works for existing users.
+      let userData: User | null = null;
       try {
-        const userData = await apiService.get<User>('/api/auth/me');
-        setUser(userData);
-        setAuthError(null);
-        return;
+        userData = await apiService.get<User>('/api/auth/me');
       } catch {
         // User not found or /me failed — fall through to sync/create.
       }
 
-      // Sync user with backend (creates or updates the user record).
-      const userData = await apiService.post<User>('/api/auth/sync', {
-        auth0Id: auth0User.sub,
-        email: auth0User.email,
-        fullName: auth0User.name,
-        profileImage: auth0User.picture,
-      });
+      if (!userData) {
+        // Sync user with backend (creates or updates the user record).
+        userData = await apiService.post<User>('/api/auth/sync', {
+          auth0Id: auth0User.sub,
+          email: auth0User.email,
+          fullName: auth0User.name,
+          profileImage: auth0User.picture,
+        });
+      }
+
       setUser(userData);
       setAuthError(null);
+
+      // Identify the signed-in user to Pendo
+      pendo.identify({
+        visitor: {
+          id: userData.id,
+          email: userData.email,
+          full_name: userData.fullName,
+          username: userData.username,
+          role: userData.role,
+          is_online: userData.isOnline,
+          balance: userData.balance,
+          total_readings: userData.totalReadings,
+          pricing_chat: userData.pricingChat,
+          pricing_voice: userData.pricingVoice,
+          pricing_video: userData.pricingVideo,
+          created_at: userData.createdAt,
+          updated_at: userData.updatedAt,
+        }
+      });
     } catch (err) {
       // Do NOT clear auth0 session here — that would kick the user back to
       // Auth0 and cause a redirect loop when the API is temporarily failing.
@@ -82,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    pendo.clearSession();
     apiService.setAccessToken(null);
     setUser(null);
     setAuthError(null);
