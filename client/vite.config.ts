@@ -52,8 +52,14 @@ function deriveClientAuth0Env(env: Record<string, string>) {
 }
 
 export default defineConfig(({ mode }) => {
-  // TODO: narrowed env loading to the "VITE_" prefix for client safety — rename any client-needed variables to use this prefix so they are still loaded.
-  const env = loadEnv(mode, process.cwd(), 'VITE_');
+  // Load ALL env vars (empty prefix), not just VITE_-prefixed ones, so the
+  // alias-hoisting in deriveClientAuth0Env can see dashboard-style names like
+  // AUTH0_DOMAIN / AUTH0_IDENTIFIER / AUTH0_ALLOWED_URL. This does NOT leak
+  // secrets to the client — only the specific values placed in `define` below
+  // are baked into the bundle, and `envPrefix: 'VITE_'` still governs what is
+  // auto-exposed via import.meta.env. (A prior "VITE_-only" narrowing here
+  // silently dropped every non-VITE Auth0 alias from the client build.)
+  const env = loadEnv(mode, process.cwd(), '');
   const auth0 = deriveClientAuth0Env(env);
 
   const apiBase = env.VITE_API_URL || env.AUTH0_ALLOWED_URL || env.AUTH0_BASE_URL || '';
