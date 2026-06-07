@@ -6,6 +6,7 @@ import { users, forumPosts, forumComments, forumFlags } from "../db/schema";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { validateBody } from "../middleware/validate";
+import { pendoTrack } from "../services/pendo-track";
 
 const router = Router();
 
@@ -92,6 +93,15 @@ router.post("/posts", requireAuth, validateBody(createPostSchema), async (req, r
     const [post] = await db.insert(forumPosts).values({
       authorId: req.user!.id, title: req.body.title, content: req.body.content, category: req.body.category,
     }).returning();
+
+    pendoTrack("forum_post_created", req.user!.id, "system", {
+      postId: post!.id,
+      authorId: req.user!.id,
+      category: req.body.category,
+      titleLength: req.body.title.length,
+      contentLength: req.body.content.length,
+    });
+
     res.status(201).json(post);
   } catch (err) { next(err); }
 });
@@ -123,6 +133,14 @@ router.post("/posts/:id/comments", requireAuth, validateBody(createCommentSchema
     if (!post) { res.status(404).json({ error: "Post not found" }); return; }
     if (post.isLocked) { res.status(403).json({ error: "Post is locked" }); return; }
     const [comment] = await db.insert(forumComments).values({ postId, authorId: req.user!.id, content: req.body.content }).returning();
+
+    pendoTrack("forum_comment_created", req.user!.id, "system", {
+      commentId: comment!.id,
+      postId,
+      authorId: req.user!.id,
+      contentLength: req.body.content.length,
+    });
+
     res.status(201).json(comment);
   } catch (err) { next(err); }
 });
@@ -149,6 +167,14 @@ router.post("/posts/:id/flag", requireAuth, validateBody(flagPostSchema), async 
       updatedAt: new Date(),
     }).where(eq(forumPosts.id, postId));
 
+    pendoTrack("content_flagged", req.user!.id, "system", {
+      flagId: flag!.id,
+      reporterId: req.user!.id,
+      contentType: "post",
+      contentId: postId,
+      reason: req.body.reason,
+    });
+
     res.status(201).json(flag);
   } catch (err) { next(err); }
 });
@@ -172,6 +198,14 @@ router.post("/comments/:id/flag", requireAuth, validateBody(flagPostSchema), asy
       flagCount: sql`${forumComments.flagCount} + 1`,
       updatedAt: new Date(),
     }).where(eq(forumComments.id, commentId));
+
+    pendoTrack("content_flagged", req.user!.id, "system", {
+      flagId: flag!.id,
+      reporterId: req.user!.id,
+      contentType: "comment",
+      contentId: commentId,
+      reason: req.body.reason,
+    });
 
     res.status(201).json(flag);
   } catch (err) { next(err); }

@@ -9,6 +9,7 @@ import { logger } from "../utils/logger";
 // Reuse the shared validator + revenue split so client/server validation and
 // reading/message payouts share a single source of truth and can't drift.
 import { sendMessageSchema, READER_SHARE } from "@soulseer/shared";
+import { pendoTrack } from "../services/pendo-track";
 
 const router = Router();
 
@@ -250,6 +251,15 @@ router.post(
         "Message sent",
       );
 
+      pendoTrack("message_sent", me.id, "system", {
+        messageId: created!.id,
+        senderId: me.id,
+        recipientId: other,
+        senderRole: me.role,
+        priceCents,
+        isPaid: priceCents > 0,
+      });
+
       res.status(201).json(presentMessage(created!, me.id));
     } catch (err) {
       next(err);
@@ -370,6 +380,14 @@ router.post("/:id/unlock", requireAuth, async (req, res, next) => {
 
     wsService.send(u.senderId, "message:unlocked", { messageId: u.id });
     logger.info({ messageId: u.id, clientId: me }, "Paid message unlocked");
+
+    pendoTrack("paid_message_unlocked", me, "system", {
+      messageId: u.id,
+      clientId: me,
+      readerId: u.senderId,
+      priceCents: u.priceCents,
+      readerShare: Math.floor(u.priceCents * READER_SHARE),
+    });
 
     res.json(presentMessage(u, me));
   } catch (err) {
