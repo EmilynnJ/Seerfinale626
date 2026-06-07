@@ -42,7 +42,8 @@ function deriveClientAuth0Env(env: Record<string, string>) {
 }
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
+  // TODO: narrowed env loading to the "VITE_" prefix for client safety — rename any client-needed variables to use this prefix so they are still loaded.
+  const env = loadEnv(mode, process.cwd(), 'VITE_');
   const auth0 = deriveClientAuth0Env(env);
 
   const apiBase = env.VITE_API_URL || env.AUTH0_ALLOWED_URL || env.AUTH0_BASE_URL || '';
