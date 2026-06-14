@@ -1,5 +1,5 @@
 import { ManagementClient } from 'auth0';
-import { randomBytes, randomInt } from 'crypto';
+import { randomInt } from 'crypto';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 
@@ -48,13 +48,12 @@ class Auth0ManagementService {
     const all = upper + lower + digits + symbols;
     const required = [upper, lower, digits, symbols];
 
-    const bytes = randomBytes(length);
     const chars: string[] = [];
     for (let i = 0; i < required.length; i++) {
-      chars.push(required[i]![bytes[i]! % required[i]!.length]!);
+      chars.push(required[i]![randomInt(required[i]!.length)]!);
     }
     for (let i = required.length; i < length; i++) {
-      chars.push(all[bytes[i]! % all.length]!);
+      chars.push(all[randomInt(all.length)]!);
     }
     // Fisher–Yates shuffle using unbiased cryptographic random indices
     for (let i = chars.length - 1; i > 0; i--) {
