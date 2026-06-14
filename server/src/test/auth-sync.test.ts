@@ -11,11 +11,13 @@ const mockSelect = vi.fn();
 vi.mock('../middleware/auth', () => ({
   checkJwt: (req: Request, _res: Response, next: NextFunction) => {
     req.auth = {
+      header: {},
+      token: 'mock-token',
       payload: {
         sub: 'auth0|new-user-123',
         email: 'newuser@example.com',
       },
-    };
+    } as any;
     next();
   },
   requireAuth: vi.fn((_req: Request, res: Response) => {

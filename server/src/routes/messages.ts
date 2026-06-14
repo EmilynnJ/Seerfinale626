@@ -153,11 +153,24 @@ router.get("/with/:userId", requireAuth, async (req, res, next) => {
     // Messaging is only available between clients and readers (admins are
     // unrestricted). Without this, any client could enumerate arbitrary
     // user IDs and read the message thread.
+    //
+    // CRITICAL REPAIR: fetch the caller's full user record from the DB so we
+    // can read .role explicitly (the previous `req.user!` access relied on
+    // an Express-augmented field that is just an id; we want the role).
+    const meId = req.user!.id;
+    const [meUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, meId));
+    if (!meUser) {
+      res.status(401).json({ error: "Caller user not found" });
+      return;
+    }
     const readerInvolvedGet =
-      me === other ||
-      me.role === "admin" ||
+      meUser.id === other ||
+      meUser.role === "admin" ||
       counterpart.role === "reader" ||
-      me.role === "reader";
+      meUser.role === "reader";
     if (!readerInvolvedGet) {
       res.status(403).json({ error: "Messaging is only available with readers" });
       return;

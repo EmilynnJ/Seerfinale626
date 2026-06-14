@@ -68,6 +68,21 @@ router.post(
           return;
         }
 
+        // CRITICAL REPAIR: fetch the user record before the transaction update
+        // so we have an explicit `balanceBefore` value to feed both the
+        // transactions row and the post-tx pendoTrack call.
+        const [user] = await db
+          .select({ id: users.id, balance: users.balance })
+          .from(users)
+          .where(eq(users.id, userId));
+        if (!user) {
+          logger.warn({ piId: pi.id, userId }, "No matching user for payment intent");
+          res.json({ received: true });
+          return;
+        }
+        const balanceBefore = user.balance;
+        const capturedBalanceBefore = balanceBefore;
+
         await db.transaction(async (tx) => {
           // Double-check inside transaction for race conditions
           const [dup] = await tx
@@ -77,13 +92,6 @@ router.post(
             .limit(1);
 
           if (dup) return; // Already processed
-
-          // Get balance before update
-          const [before] = await tx
-            .select({ balance: users.balance })
-            .from(users)
-            .where(eq(users.id, userId));
-          const balanceBefore = before?.balance ?? 0;
 
           const [u] = await tx
             .update(users)
@@ -98,7 +106,7 @@ router.post(
             userId,
             type: "topup",
             amount: pi.amount,
-            balanceBefore,
+            balanceBefore: capturedBalanceBefore,
             balanceAfter: u!.balance,
             stripePaymentIntentId: pi.id,
             note: `Top-up $${(pi.amount / 100).toFixed(2)}`,
@@ -110,8 +118,8 @@ router.post(
         pendoTrack("balance_topup_completed", userId, "system", {
           userId,
           amount: pi.amount,
-          balanceBefore,
-          balanceAfter: balanceBefore + pi.amount,
+          balanceBefore: capturedBalanceBefore,
+          balanceAfter: capturedBalanceBefore + pi.amount,
           stripePaymentIntentId: pi.id,
         });
       }
