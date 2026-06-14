@@ -1,0 +1,13 @@
+{
+  "version": "2.0.0",
+  "docker": [
+    {
+      "id": "docker-0",
+      "file": "/Dockerfile",
+      "type": "dockerfile",
+      "exposedPorts": [
+        8080
+      ]
+    }
+  ]
+}

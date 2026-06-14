@@ -1,0 +1,201 @@
+{
+  "version": "2.0.0",
+  "dependencies": [
+    {
+      "name": "@neondatabase/serverless",
+      "version": "^0.10.4",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "agora-token",
+      "version": "^2.0.5",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "cloudinary",
+      "version": "^2.5.1",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "cors",
+      "version": "^2.8.5",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "dotenv",
+      "version": "^16.6.1",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "drizzle-orm",
+      "version": "^0.45.2",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "express",
+      "version": "^4.22.2",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "express-oauth2-jwt-bearer",
+      "version": "^1.6.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "express-rate-limit",
+      "version": "^7.5.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "helmet",
+      "version": "^8.1.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "jose",
+      "version": "^5.9.6",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "multer",
+      "version": "^2.1.1",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "pino",
+      "version": "^9.9.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "pino-http",
+      "version": "^10.0.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "serverless-http",
+      "version": "^4.0.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "stripe",
+      "version": "^17.2.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "vibecheck",
+      "version": "^0.0.1-0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "ws",
+      "version": "^8.21.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "zod",
+      "version": "^3.23.8",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "@netlify/functions",
+      "version": "^2.8.0",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "@types/cors",
+      "version": "^2.8.18",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "@types/express",
+      "version": "^4.17.25",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "@types/multer",
+      "version": "^1.4.12",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "@types/ws",
+      "version": "^8.5.14",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "@vercel/node",
+      "version": "^5.1.0",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "concurrently",
+      "version": "^10.0.3",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "drizzle-kit",
+      "version": "^0.31.9",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "typescript",
+      "version": "^5.7.3",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    }
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "version": "2.0.0",
+  "routes": [
+    {
+      "id": "route-0",
+      "method": "GET",
+      "path": "/server/src/routes/webhooks",
+      "handler": "webhooks.ts",
+      "file": "/server/src/routes/webhooks.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-1",
+      "method": "GET",
+      "path": "/server/src/routes/users",
+      "handler": "users.ts",
+      "file": "/server/src/routes/users.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-2",
+      "method": "GET",
+      "path": "/server/src/routes/transactions",
+      "handler": "transactions.ts",
+      "file": "/server/src/routes/transactions.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-3",
+      "method": "GET",
+      "path": "/server/src/routes/readings",
+      "handler": "readings.ts",
+      "file": "/server/src/routes/readings.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-4",
+      "method": "GET",
+      "path": "/server/src/routes/payments",
+      "handler": "payments.ts",
+      "file": "/server/src/routes/payments.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-5",
+      "method": "GET",
+      "path": "/server/src/routes/newsletter",
+      "handler": "newsletter.ts",
+      "file": "/server/src/routes/newsletter.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-6",
+      "method": "GET",
+      "path": "/server/src/routes/messages",
+      "handler": "messages.ts",
+      "file": "/server/src/routes/messages.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-7",
+      "method": "GET",
+      "path": "/server/src/routes/forum",
+      "handler": "forum.ts",
+      "file": "/server/src/routes/forum.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-8",
+      "method": "GET",
+      "path": "/server/src/routes/auth",
+      "handler": "auth.ts",
+      "file": "/server/src/routes/auth.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-9",
+      "method": "GET",
+      "path": "/server/src/routes/applications",
+      "handler": "applications.ts",
+      "file": "/server/src/routes/applications.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-10",
+      "method": "GET",
+      "path": "/server/src/routes/admin",
+      "handler": "admin.ts",
+      "file": "/server/src/routes/admin.ts",
+      "framework": "express",
+      "confidence": "medium"
+    }
+  ]
+}

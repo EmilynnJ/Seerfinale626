@@ -1,0 +1,14 @@
+{
+  "version": "1.0.0",
+  "projectName": "Seerfinale626",
+  "userName": "developer",
+  "skillLevel": "intermediate",
+  "outputFolder": ".vibecheck/flow",
+  "planningArtifacts": ".vibecheck\\flow\\planning-artifacts",
+  "implementationArtifacts": ".vibecheck\\flow\\implementation-artifacts",
+  "installedAt": "2026-06-14T17:55:04.127Z",
+  "ide": [
+    "cursor",
+    "claude-code"
+  ]
+}

@@ -1,0 +1,193 @@
+{
+  "version": "2.0.0",
+  "database": [
+    {
+      "id": "db-0",
+      "name": "drizzle",
+      "type": "drizzle",
+      "file": "/shared/src/schema.ts",
+      "tables": [
+        {
+          "name": "users",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "auth0Id",
+              "type": "varchar"
+            }
+          ]
+        },
+        {
+          "name": "readings",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "clientId",
+              "type": "integer"
+            },
+            {
+              "name": "readerId",
+              "type": "integer"
+            },
+            {
+              "name": "readingType",
+              "type": "readingTypeEnum"
+            },
+            {
+              "name": "status",
+              "type": "readingStatusEnum"
+            },
+            {
+              "name": "ratePerMinute",
+              "type": "integer"
+            },
+            {
+              "name": "startedAt",
+              "type": "timestamp"
+            }
+          ]
+        },
+        {
+          "name": "transactions",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "userId",
+              "type": "integer"
+            },
+            {
+              "name": "readingId",
+              "type": "integer"
+            },
+            {
+              "name": "type",
+              "type": "transactionTypeEnum"
+            },
+            {
+              "name": "amount",
+              "type": "integer"
+            },
+            {
+              "name": "balanceBefore",
+              "type": "integer"
+            },
+            {
+              "name": "balanceAfter",
+              "type": "integer"
+            },
+            {
+              "name": "note",
+              "type": "text"
+            },
+            {
+              "name": "stripePaymentIntentId",
+              "type": "varchar"
+            }
+          ]
+        },
+        {
+          "name": "messages",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "senderId",
+              "type": "integer"
+            },
+            {
+              "name": "recipientId",
+              "type": "integer"
+            },
+            {
+              "name": "content",
+              "type": "text"
+            },
+            {
+              "name": "priceCents",
+              "type": "integer"
+            },
+            {
+              "name": "isUnlocked",
+              "type": "boolean"
+            },
+            {
+              "name": "unlockedAt",
+              "type": "timestamp"
+            }
+          ]
+        },
+        {
+          "name": "forum_posts",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "authorId",
+              "type": "integer"
+            },
+            {
+              "name": "title",
+              "type": "varchar"
+            }
+          ]
+        },
+        {
+          "name": "forum_comments",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "postId",
+              "type": "integer"
+            }
+          ]
+        },
+        {
+          "name": "forum_flags",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "reporterId",
+              "type": "integer"
+            },
+            {
+              "name": "postId",
+              "type": "integer"
+            }
+          ]
+        },
+        {
+          "name": "newsletter_subscribers",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "email",
+              "type": "varchar"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -89,6 +89,8 @@ const envSchema = z.object({
     .default('true')
     .transform((v) => v.toLowerCase() !== 'false'),
   ADMIN_EMAILS: z.string().default('emilynnj14@gmail.com'),
+  POSTHOG_API_KEY: z.string().default(''),
+  POSTHOG_HOST: z.string().default('https://us.i.posthog.com'),
 });
 
 function loadConfig() {
@@ -151,4 +153,9 @@ export const config = {
     enabled: Boolean(env.BREVO_API_KEY),
   },
   adminEmails: env.ADMIN_EMAILS.split(',').map((e) => e.trim().toLowerCase()),
+  posthog: {
+    apiKey: env.POSTHOG_API_KEY,
+    host: env.POSTHOG_HOST,
+    enabled: Boolean(env.POSTHOG_API_KEY),
+  },
 } as const;

@@ -14,6 +14,7 @@ import { generalLimiter, strictLimiter, webhookLimiter } from './middleware/rate
 import { globalErrorHandler } from './middleware/error-handler';
 import { wsService } from './services/websocket-service';
 import { billingService } from './services/billing-service';
+import posthog from './services/posthog';
 
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
@@ -161,6 +162,11 @@ function shutdown(signal: string) {
   wsService.shutdown();
   server.close(async () => {
     logger.info('HTTP server closed');
+    try {
+      await posthog.shutdown();
+    } catch (err) {
+      logger.warn({ err }, 'PostHog shutdown error');
+    }
     try {
       await pool.end();
       logger.info('Database pool closed');

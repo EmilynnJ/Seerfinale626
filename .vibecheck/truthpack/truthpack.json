@@ -1,0 +1,919 @@
+{
+  "version": "2.0.0",
+  "generatedAt": "2026-06-14T17:58:04.271Z",
+  "hash": "1e86f9a3160fc214",
+  "meta": {
+    "version": "2.0.0",
+    "generatedAt": "2026-06-14T17:58:04.271Z",
+    "hash": "1e86f9a3160fc214",
+    "sequence": 1,
+    "projectType": "express",
+    "scanDurationMs": 646
+  },
+  "routes": [
+    {
+      "id": "route-0",
+      "method": "GET",
+      "path": "/server/src/routes/webhooks",
+      "handler": "webhooks.ts",
+      "file": "/server/src/routes/webhooks.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-1",
+      "method": "GET",
+      "path": "/server/src/routes/users",
+      "handler": "users.ts",
+      "file": "/server/src/routes/users.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-2",
+      "method": "GET",
+      "path": "/server/src/routes/transactions",
+      "handler": "transactions.ts",
+      "file": "/server/src/routes/transactions.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-3",
+      "method": "GET",
+      "path": "/server/src/routes/readings",
+      "handler": "readings.ts",
+      "file": "/server/src/routes/readings.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-4",
+      "method": "GET",
+      "path": "/server/src/routes/payments",
+      "handler": "payments.ts",
+      "file": "/server/src/routes/payments.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-5",
+      "method": "GET",
+      "path": "/server/src/routes/newsletter",
+      "handler": "newsletter.ts",
+      "file": "/server/src/routes/newsletter.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-6",
+      "method": "GET",
+      "path": "/server/src/routes/messages",
+      "handler": "messages.ts",
+      "file": "/server/src/routes/messages.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-7",
+      "method": "GET",
+      "path": "/server/src/routes/forum",
+      "handler": "forum.ts",
+      "file": "/server/src/routes/forum.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-8",
+      "method": "GET",
+      "path": "/server/src/routes/auth",
+      "handler": "auth.ts",
+      "file": "/server/src/routes/auth.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-9",
+      "method": "GET",
+      "path": "/server/src/routes/applications",
+      "handler": "applications.ts",
+      "file": "/server/src/routes/applications.ts",
+      "framework": "express",
+      "confidence": "medium"
+    },
+    {
+      "id": "route-10",
+      "method": "GET",
+      "path": "/server/src/routes/admin",
+      "handler": "admin.ts",
+      "file": "/server/src/routes/admin.ts",
+      "framework": "express",
+      "confidence": "medium"
+    }
+  ],
+  "env": [
+    {
+      "id": "env-0",
+      "name": "NEON_DB_CONNECTION_STRING",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-1",
+      "name": "NEON_DB_PGHOST",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "url"
+    },
+    {
+      "id": "env-2",
+      "name": "NEON_DB_PGDATABASE",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-3",
+      "name": "NEON_DB_PGUSER",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-4",
+      "name": "NEON_DB_PGPASSWORD",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "secret"
+    },
+    {
+      "id": "env-5",
+      "name": "NEON_DB_PGSSLMODE",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-6",
+      "name": "NEON_DB_PGCHANNELBINDING",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-7",
+      "name": "NEON_API_URL",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "url"
+    },
+    {
+      "id": "env-8",
+      "name": "REDIS_DB_HOST",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "url"
+    },
+    {
+      "id": "env-9",
+      "name": "REDIS_DB_PASSWORD",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "secret"
+    },
+    {
+      "id": "env-10",
+      "name": "REDIS_DB_ENDPOINT",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-11",
+      "name": "REDIS_DB_USERNAME",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-12",
+      "name": "REDIS_DB_PORT",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "number"
+    },
+    {
+      "id": "env-13",
+      "name": "VITE_STRIPE_PUBLISHABLE_KEY",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "secret"
+    },
+    {
+      "id": "env-14",
+      "name": "STRIPE_SECRET_KEY",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "secret"
+    },
+    {
+      "id": "env-15",
+      "name": "STRIPE_WEBHOOK_SIGNING_SECRET",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "secret"
+    },
+    {
+      "id": "env-16",
+      "name": "AUTH0_APP_ID",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-17",
+      "name": "VITE_AUTH0_CLIENT_ID",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-18",
+      "name": "AUTH0_CLIENT_SECRET",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "secret"
+    },
+    {
+      "id": "env-19",
+      "name": "VITE_AUTH0_DOMAIN_URL",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "url"
+    },
+    {
+      "id": "env-20",
+      "name": "VITE_AUTH0_AUDIENCE",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-21",
+      "name": "VITE_AUTH0_REDIRECT_URI",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-22",
+      "name": "BACKBLAZE_KEY_NAME",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "secret"
+    },
+    {
+      "id": "env-23",
+      "name": "BACKBLAZE_APP_ID",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-24",
+      "name": "AGORA_CHAT_APP_ID",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-25",
+      "name": "AGORA_ORG_ID",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-26",
+      "name": "VITE_AGORA_APP_ID",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-27",
+      "name": "AGORA_SECURITY_CERTIFICATE",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-28",
+      "name": "AGORA_CUSTOMER_ID",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-29",
+      "name": "AGORA_CUSTOMER_SECRET",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "secret"
+    },
+    {
+      "id": "env-30",
+      "name": "CLOUDINARY_API_KEY",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "secret"
+    },
+    {
+      "id": "env-31",
+      "name": "CLOUDINARY_SECRET",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "secret"
+    },
+    {
+      "id": "env-32",
+      "name": "POSTHOG_API_KEY",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "secret"
+    },
+    {
+      "id": "env-33",
+      "name": "POSTHOG_HOST",
+      "file": ".env",
+      "required": false,
+      "hasDefault": true,
+      "type": "url"
+    },
+    {
+      "id": "env-34",
+      "name": "DATABASE_URL",
+      "file": ".env.example",
+      "required": true,
+      "hasDefault": true,
+      "type": "url"
+    },
+    {
+      "id": "env-35",
+      "name": "AUTH0_DOMAIN",
+      "file": ".env.example",
+      "required": true,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-36",
+      "name": "AUTH0_AUDIENCE",
+      "file": ".env.example",
+      "required": true,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-37",
+      "name": "AUTH0_MGMT_CLIENT_ID",
+      "file": ".env.example",
+      "required": true,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-38",
+      "name": "AUTH0_MGMT_CLIENT_SECRET",
+      "file": ".env.example",
+      "required": true,
+      "hasDefault": false,
+      "type": "secret"
+    },
+    {
+      "id": "env-39",
+      "name": "AGORA_APP_ID",
+      "file": ".env.example",
+      "required": true,
+      "hasDefault": false,
+      "type": "string"
+    },
+    {
+      "id": "env-40",
+      "name": "AGORA_APP_CERTIFICATE",
+      "file": ".env.example",
+      "required": true,
+      "hasDefault": false,
+      "type": "string"
+    },
+    {
+      "id": "env-41",
+      "name": "STRIPE_WEBHOOK_SECRET",
+      "file": ".env.example",
+      "required": true,
+      "hasDefault": false,
+      "type": "secret"
+    },
+    {
+      "id": "env-42",
+      "name": "CLOUDINARY_CLOUD_NAME",
+      "file": ".env.example",
+      "required": true,
+      "hasDefault": false,
+      "type": "string"
+    },
+    {
+      "id": "env-43",
+      "name": "CLOUDINARY_API_SECRET",
+      "file": ".env.example",
+      "required": true,
+      "hasDefault": false,
+      "type": "secret"
+    },
+    {
+      "id": "env-44",
+      "name": "BREVO_API_KEY",
+      "file": ".env.example",
+      "required": true,
+      "hasDefault": false,
+      "type": "secret"
+    },
+    {
+      "id": "env-45",
+      "name": "PORT",
+      "file": ".env.example",
+      "required": true,
+      "hasDefault": true,
+      "type": "number"
+    },
+    {
+      "id": "env-46",
+      "name": "CORS_ORIGIN",
+      "file": ".env.example",
+      "required": true,
+      "hasDefault": true,
+      "type": "string"
+    },
+    {
+      "id": "env-47",
+      "name": "NODE_ENV",
+      "file": ".env.example",
+      "required": true,
+      "hasDefault": true,
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "roles": [],
+    "protectedResources": [],
+    "publicPaths": [],
+    "rules": []
+  },
+  "contracts": [],
+  "database": [
+    {
+      "id": "db-0",
+      "name": "drizzle",
+      "type": "drizzle",
+      "file": "/shared/src/schema.ts",
+      "tables": [
+        {
+          "name": "users",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "auth0Id",
+              "type": "varchar"
+            }
+          ]
+        },
+        {
+          "name": "readings",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "clientId",
+              "type": "integer"
+            },
+            {
+              "name": "readerId",
+              "type": "integer"
+            },
+            {
+              "name": "readingType",
+              "type": "readingTypeEnum"
+            },
+            {
+              "name": "status",
+              "type": "readingStatusEnum"
+            },
+            {
+              "name": "ratePerMinute",
+              "type": "integer"
+            },
+            {
+              "name": "startedAt",
+              "type": "timestamp"
+            }
+          ]
+        },
+        {
+          "name": "transactions",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "userId",
+              "type": "integer"
+            },
+            {
+              "name": "readingId",
+              "type": "integer"
+            },
+            {
+              "name": "type",
+              "type": "transactionTypeEnum"
+            },
+            {
+              "name": "amount",
+              "type": "integer"
+            },
+            {
+              "name": "balanceBefore",
+              "type": "integer"
+            },
+            {
+              "name": "balanceAfter",
+              "type": "integer"
+            },
+            {
+              "name": "note",
+              "type": "text"
+            },
+            {
+              "name": "stripePaymentIntentId",
+              "type": "varchar"
+            }
+          ]
+        },
+        {
+          "name": "messages",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "senderId",
+              "type": "integer"
+            },
+            {
+              "name": "recipientId",
+              "type": "integer"
+            },
+            {
+              "name": "content",
+              "type": "text"
+            },
+            {
+              "name": "priceCents",
+              "type": "integer"
+            },
+            {
+              "name": "isUnlocked",
+              "type": "boolean"
+            },
+            {
+              "name": "unlockedAt",
+              "type": "timestamp"
+            }
+          ]
+        },
+        {
+          "name": "forum_posts",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "authorId",
+              "type": "integer"
+            },
+            {
+              "name": "title",
+              "type": "varchar"
+            }
+          ]
+        },
+        {
+          "name": "forum_comments",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "postId",
+              "type": "integer"
+            }
+          ]
+        },
+        {
+          "name": "forum_flags",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "reporterId",
+              "type": "integer"
+            },
+            {
+              "name": "postId",
+              "type": "integer"
+            }
+          ]
+        },
+        {
+          "name": "newsletter_subscribers",
+          "columns": [
+            {
+              "name": "id",
+              "type": "serial"
+            },
+            {
+              "name": "email",
+              "type": "varchar"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "middleware": [],
+  "dependencies": [
+    {
+      "name": "@neondatabase/serverless",
+      "version": "^0.10.4",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "agora-token",
+      "version": "^2.0.5",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "cloudinary",
+      "version": "^2.5.1",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "cors",
+      "version": "^2.8.5",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "dotenv",
+      "version": "^16.6.1",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "drizzle-orm",
+      "version": "^0.45.2",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "express",
+      "version": "^4.22.2",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "express-oauth2-jwt-bearer",
+      "version": "^1.6.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "express-rate-limit",
+      "version": "^7.5.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "helmet",
+      "version": "^8.1.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "jose",
+      "version": "^5.9.6",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "multer",
+      "version": "^2.1.1",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "pino",
+      "version": "^9.9.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "pino-http",
+      "version": "^10.0.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "serverless-http",
+      "version": "^4.0.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "stripe",
+      "version": "^17.2.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "vibecheck",
+      "version": "^0.0.1-0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "ws",
+      "version": "^8.21.0",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "zod",
+      "version": "^3.23.8",
+      "type": "production",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "@netlify/functions",
+      "version": "^2.8.0",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "@types/cors",
+      "version": "^2.8.18",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "@types/express",
+      "version": "^4.17.25",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "@types/multer",
+      "version": "^1.4.12",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "@types/ws",
+      "version": "^8.5.14",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "@vercel/node",
+      "version": "^5.1.0",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "concurrently",
+      "version": "^10.0.3",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "drizzle-kit",
+      "version": "^0.31.9",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    },
+    {
+      "name": "typescript",
+      "version": "^5.7.3",
+      "type": "development",
+      "deprecated": false,
+      "vulnerable": false
+    }
+  ],
+  "docker": [
+    {
+      "id": "docker-0",
+      "file": "/Dockerfile",
+      "type": "dockerfile",
+      "exposedPorts": [
+        8080
+      ]
+    }
+  ],
+  "security": [],
+  "graphql": [],
+  "websockets": [],
+  "health": {
+    "overall": 55,
+    "routes": 0,
+    "env": 85,
+    "auth": 0,
+    "contracts": 0,
+    "database": 100,
+    "dependencies": 100,
+    "security": 100
+  }
+}

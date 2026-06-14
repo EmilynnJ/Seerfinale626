@@ -53,3 +53,7 @@ coverage/
 
 .nx/cache
 .nx/workspace-data
+# VibeCheck
+.vibecheck/screenshots/
+.vibecheck/scan-results.json
+.vibecheck/context-engine-ledger.json
