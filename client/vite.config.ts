@@ -12,7 +12,7 @@ import react from '@vitejs/plugin-react';
 // break login. Any env var, if present, still takes precedence.
 const FALLBACK_AUTH0_DOMAIN = 'dev-2x1dti3irhuz62jc.us.auth0.com';
 const FALLBACK_AUTH0_CLIENT_ID = 'Y3GGfwjZGjf4xEYDgAfqEeK9CiFMf4qg';
-const FALLBACK_AUTH0_AUDIENCE = 'https://soulseerpsychics.vercel.app';
+const FALLBACK_AUTH0_AUDIENCE = 'https://api.soulseerpsychics.vercel.app';
 
 function deriveClientAuth0Env(env: Record<string, string>) {
   const domainSource =
