@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { appendFileSync } from "fs";
-import { join } from "path";
+import { resolve } from "path";
 import { getDb } from "../db/db";
 import { users } from "../db/schema";
 import { requireAuth, checkJwt } from "../middleware/auth";
@@ -13,7 +13,11 @@ import { config } from "../config";
 
 const router = Router();
 
-const DEBUG_LOG = join(__dirname, "../../../debug-f0e72b.log");
+const DEBUG_LOG_PATHS = [
+  resolve(__dirname, "../../../debug-f0e72b.log"),
+  resolve(process.cwd(), "debug-f0e72b.log"),
+  resolve(process.cwd(), "../debug-f0e72b.log"),
+];
 
 function debugLog(
   location: string,
@@ -21,21 +25,22 @@ function debugLog(
   data: Record<string, unknown>,
   hypothesisId: string,
 ): void {
-  try {
-    appendFileSync(
-      DEBUG_LOG,
-      `${JSON.stringify({
-        sessionId: "f0e72b",
-        location,
-        message,
-        data,
-        hypothesisId,
-        timestamp: Date.now(),
-        runId: "pre-fix",
-      })}\n`,
-    );
-  } catch {
-    /* ignore logging failures */
+  const line = `${JSON.stringify({
+    sessionId: "f0e72b",
+    location,
+    message,
+    data,
+    hypothesisId,
+    timestamp: Date.now(),
+    runId: "post-fix",
+  })}\n`;
+  for (const logPath of DEBUG_LOG_PATHS) {
+    try {
+      appendFileSync(logPath, line);
+      return;
+    } catch {
+      /* try next path */
+    }
   }
 }
 
@@ -43,7 +48,7 @@ const callbackSchema = z.object({
   auth0Id: z.string().min(1),
   email: z.string().email(),
   fullName: z.string().optional(),
-  profileImage: z.string().url().optional(),
+  profileImage: z.string().optional(),
 });
 
 function resolveRole(email: string): "admin" | "client" {

@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './load-env';
 import { z } from 'zod';
 
 // Accept Auth0 variable aliases so deployments can use either the canonical
