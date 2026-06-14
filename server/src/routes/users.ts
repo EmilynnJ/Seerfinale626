@@ -7,6 +7,7 @@ import { requireAuth } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import { auth0ManagementService } from "../services/auth0-management";
 import { logger } from "../utils/logger";
+import { pendoTrack } from "../services/pendo-track";
 
 const router = Router();
 
@@ -196,6 +197,12 @@ router.patch(
         .where(eq(users.id, req.user!.id))
         .returning();
 
+      pendoTrack("profile_updated", req.user!.id, "system", {
+        userId: req.user!.id,
+        userRole: req.user!.role,
+        fieldsUpdated: Object.keys(updates).filter((k) => k !== "updatedAt").join(","),
+      });
+
       const { auth0Id, stripeAccountId, stripeCustomerId, ...safe } = updated!;
       res.json(safe);
     } catch (err) {
@@ -213,11 +220,18 @@ router.patch("/readers/status", requireAuth, async (req, res, next) => {
       return;
     }
     const isOnline = req.body.isOnline === true;
+    const previousStatus = req.user!.isOnline;
     const [u] = await db
       .update(users)
       .set({ isOnline, updatedAt: new Date() })
       .where(eq(users.id, req.user!.id))
       .returning({ isOnline: users.isOnline });
+
+    pendoTrack("reader_status_toggled", req.user!.id, "system", {
+      readerId: req.user!.id,
+      isOnline,
+      previousStatus: !!previousStatus,
+    });
 
     // If the reader has just gone offline, notify any partners on active/pending
     // readings and mark accepted/in-progress sessions as paused so billing
@@ -271,6 +285,14 @@ router.patch(
         .set(updates)
         .where(eq(users.id, req.user!.id))
         .returning();
+
+      pendoTrack("reader_pricing_updated", req.user!.id, "system", {
+        readerId: req.user!.id,
+        pricingChat: u!.pricingChat,
+        pricingVoice: u!.pricingVoice,
+        pricingVideo: u!.pricingVideo,
+        fieldsChanged: Object.keys(updates).filter((k) => k !== "updatedAt").join(","),
+      });
 
       res.json({
         pricingChat: u!.pricingChat,
@@ -393,6 +415,17 @@ router.delete("/me", requireAuth, async (req, res, next) => {
       .where(eq(users.id, userId));
 
     logger.info({ userId, auth0Deleted }, "Account deleted");
+
+    const accountAgeDays = Math.floor(
+      (now.getTime() - new Date(req.user!.createdAt).getTime()) / (1000 * 60 * 60 * 24),
+    );
+    pendoTrack("account_deleted", userId, "system", {
+      userId,
+      userRole: req.user!.role,
+      auth0Deleted,
+      accountAgeDays,
+    });
+
     res.json({ ok: true, auth0Deleted });
   } catch (err) {
     next(err);
