@@ -6,6 +6,7 @@ import { newsletterSubscribers } from "../db/schema";
 import { validateBody } from "../middleware/validate";
 import { logger } from "../utils/logger";
 import { brevoService } from "../services/brevo-service";
+import { pendoTrack } from "../services/pendo-track";
 
 const router = Router();
 
@@ -37,6 +38,14 @@ router.post("/subscribe", validateBody(subscribeSchema), async (req, res, next) 
           logger.warn({ err, email }, "Newsletter re-activation welcome send failed");
         });
       }
+      if (!wasActive) {
+        pendoTrack("newsletter_subscribed", email, "system", {
+          email,
+          isReactivation: true,
+          source: "homepage",
+        });
+      }
+
       res.status(200).json({
         ok: true,
         subscribed: true,
@@ -47,6 +56,12 @@ router.post("/subscribe", validateBody(subscribeSchema), async (req, res, next) 
 
     await db.insert(newsletterSubscribers).values({ email });
     logger.info({ email }, "Newsletter signup");
+
+    pendoTrack("newsletter_subscribed", email, "system", {
+      email,
+      isReactivation: false,
+      source: "homepage",
+    });
 
     void brevoService.sendNewsletterWelcome(email).catch((err) => {
       logger.warn({ err, email }, "Newsletter welcome send failed");

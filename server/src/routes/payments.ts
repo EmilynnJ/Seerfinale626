@@ -9,6 +9,7 @@ import { requireAuth } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import { config } from "../config";
 import { logger } from "../utils/logger";
+import { pendoTrack } from "../services/pendo-track";
 import { strictLimiter } from "../middleware/rate-limit";
 
 const router = Router();
@@ -105,6 +106,14 @@ router.post(
         });
 
         logger.info({ userId, amount: pi.amount }, "Balance credited via webhook");
+
+        pendoTrack("balance_topup_completed", userId, "system", {
+          userId,
+          amount: pi.amount,
+          balanceBefore,
+          balanceAfter: balanceBefore + pi.amount,
+          stripePaymentIntentId: pi.id,
+        });
       }
 
       res.json({ received: true });
@@ -150,6 +159,12 @@ router.post(
         metadata: { userId: String(req.user!.id), type: "balance_topup" },
         automatic_payment_methods: { enabled: true },
       });
+      pendoTrack("payment_intent_created", req.user!.id, "system", {
+        userId: req.user!.id,
+        amount: req.body.amount,
+        paymentIntentId: pi.id,
+      });
+
       res.json({ clientSecret: pi.client_secret, paymentIntentId: pi.id });
     } catch (err) {
       next(err);

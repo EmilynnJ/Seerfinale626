@@ -19,6 +19,7 @@ import { config } from "../config";
 import { logger } from "../utils/logger";
 import { auth0ManagementService } from "../services/auth0-management";
 import { cloudinaryService } from "../services/cloudinary-service";
+import { pendoTrack } from "../services/pendo-track";
 
 const router = Router();
 const stripe = new Stripe(config.stripe.secretKey, {
@@ -211,6 +212,16 @@ router.post("/readers", validateBody(createReaderSchema), async (req, res, next)
       "Reader created by admin (Auth0 + Stripe Connect provisioned)",
     );
 
+    pendoTrack("reader_account_created", req.user!.id, "system", {
+      readerId: reader!.id,
+      adminId: req.user!.id,
+      email: body.email,
+      pricingChat: body.pricingChat,
+      pricingVoice: body.pricingVoice,
+      pricingVideo: body.pricingVideo,
+      hasStripeAccount: true,
+    });
+
     // NOTE: The generated password is returned ONCE to the admin. The admin is
     // responsible for delivering it securely to the reader. We do not persist
     // the password anywhere.
@@ -285,6 +296,13 @@ router.post(
         { adminId: req.user!.id, readerId, size: req.file.size, mime: req.file.mimetype },
         "Reader profile image uploaded",
       );
+
+      pendoTrack("reader_profile_image_uploaded", req.user!.id, "system", {
+        readerId,
+        adminId: req.user!.id,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+      });
 
       res.json({ url });
     } catch (err) {
@@ -393,6 +411,12 @@ router.patch("/users/:id/role", async (req, res, next) => {
       return;
     }
 
+    const [existing] = await db
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, userId));
+    const previousRole = existing?.role;
+
     const [u] = await db
       .update(users)
       .set({ role, updatedAt: new Date() })
@@ -403,6 +427,13 @@ router.patch("/users/:id/role", async (req, res, next) => {
       res.status(404).json({ error: "User not found" });
       return;
     }
+
+    pendoTrack("user_role_changed", req.user!.id, "system", {
+      userId,
+      adminId: req.user!.id,
+      previousRole: previousRole ?? "unknown",
+      newRole: role,
+    });
 
     res.json(u);
   } catch (err) {
@@ -457,6 +488,13 @@ router.post("/balance-adjust", validateBody(adjustSchema), async (req, res, next
       { userId, amount, note, adminId: req.user!.id },
       "Admin balance adjustment",
     );
+
+    pendoTrack("admin_balance_adjusted", req.user!.id, "system", {
+      userId,
+      adminId: req.user!.id,
+      amount,
+      note,
+    });
 
     res.json({ ok: true });
   } catch (err) {
@@ -597,6 +635,14 @@ router.post("/payouts/:readerId", async (req, res, next) => {
       "Reader payout processed by admin",
     );
 
+    pendoTrack("reader_payout_processed", req.user!.id, "system", {
+      readerId,
+      adminId: req.user!.id,
+      amount,
+      stripeTransferId: transfer.id,
+      stripeAccountId: reader.stripeAccountId,
+    });
+
     res.json({ transferId: transfer.id, amount });
   } catch (err) {
     next(err);
@@ -663,6 +709,16 @@ router.post("/readings/:id/refund", async (req, res, next) => {
       { readingId, amount, adminId: req.user!.id },
       "Reading refunded by admin",
     );
+
+    pendoTrack("reading_refunded", req.user!.id, "system", {
+      readingId,
+      clientId: reading.clientId,
+      readerId: reading.readerId,
+      adminId: req.user!.id,
+      refundAmount: amount,
+      readingType: reading.readingType,
+      durationSeconds: reading.durationSeconds,
+    });
 
     res.json({ ok: true, amount });
   } catch (err) {
@@ -750,6 +806,13 @@ router.delete("/posts/:id", async (req, res, next) => {
     const db = getDb();
     const postId = parseInt(req.params.id!, 10);
     await db.delete(forumPosts).where(eq(forumPosts.id, postId));
+
+    pendoTrack("admin_content_moderated", req.user!.id, "system", {
+      adminId: req.user!.id,
+      contentType: "post",
+      contentId: postId,
+    });
+
     res.json({ ok: true });
   } catch (err) {
     next(err);
@@ -762,6 +825,13 @@ router.delete("/comments/:id", async (req, res, next) => {
     const db = getDb();
     const commentId = parseInt(req.params.id!, 10);
     await db.delete(forumComments).where(eq(forumComments.id, commentId));
+
+    pendoTrack("admin_content_moderated", req.user!.id, "system", {
+      adminId: req.user!.id,
+      contentType: "comment",
+      contentId: commentId,
+    });
+
     res.json({ ok: true });
   } catch (err) {
     next(err);

@@ -10,6 +10,7 @@ import { AgoraService } from "../services/agora-service";
 import { wsService } from "../services/websocket-service";
 import { billingService } from "../services/billing-service";
 import { logger } from "../utils/logger";
+import { pendoTrack } from "../services/pendo-track";
 import { strictLimiter } from "../middleware/rate-limit";
 
 const router = Router();
@@ -113,6 +114,15 @@ router.post(
         "Reading request created",
       );
 
+      pendoTrack("reading_requested", req.user!.id, "system", {
+        readingId: reading!.id,
+        clientId: req.user!.id,
+        readerId,
+        readingType,
+        ratePerMinute,
+        clientBalance: req.user!.balance,
+      });
+
       res.status(201).json({ reading });
     } catch (err) {
       next(err);
@@ -189,6 +199,14 @@ router.post("/:id/decline", requireAuth, async (req, res, next) => {
     });
 
     logger.info({ readingId }, "Reading declined by reader");
+
+    pendoTrack("reading_declined", req.user!.id, "system", {
+      readingId,
+      readerId: req.user!.id,
+      clientId: reading.clientId,
+      readingType: reading.readingType,
+    });
+
     res.json({ ok: true });
   } catch (err) {
     next(err);
@@ -236,6 +254,18 @@ router.post("/:id/accept", requireAuth, async (req, res, next) => {
     });
 
     logger.info({ readingId }, "Reading accepted by reader");
+
+    const responseTimeSeconds = Math.round(
+      (now.getTime() - new Date(reading.createdAt).getTime()) / 1000,
+    );
+    pendoTrack("reading_accepted", req.user!.id, "system", {
+      readingId,
+      readerId: req.user!.id,
+      clientId: reading.clientId,
+      readingType: reading.readingType,
+      responseTimeSeconds,
+    });
+
     res.json(updated);
   } catch (err) {
     next(err);
@@ -380,6 +410,14 @@ router.post(
         { readingId: reading.id, clientId: reading.clientId, readerId: reading.readerId },
         "Reading session started, billing active",
       );
+
+      pendoTrack("reading_session_started", req.user!.id, "system", {
+        readingId: reading.id,
+        clientId: reading.clientId,
+        readerId: reading.readerId,
+        readingType: reading.readingType,
+        ratePerMinute: reading.ratePerMinute,
+      });
 
       res.json(updated);
     } catch (err) {
@@ -586,6 +624,18 @@ router.post(
         "Reading ended and billing finalized",
       );
 
+      pendoTrack("reading_session_completed", req.user!.id, "system", {
+        readingId: reading.id,
+        clientId: reading.clientId,
+        readerId: reading.readerId,
+        readingType: reading.readingType,
+        durationSeconds: r.durationSeconds,
+        totalCharged: r.totalCharged,
+        readerEarned: r.readerEarned,
+        platformEarned: r.platformEarned,
+        ratePerMinute: reading.ratePerMinute,
+      });
+
       res.json({
         readingId: reading.id,
         durationSeconds: r.durationSeconds,
@@ -649,6 +699,16 @@ router.post(
         .set({ rating, review: review || null, updatedAt: new Date() })
         .where(eq(readings.id, readingId))
         .returning();
+
+      pendoTrack("reading_review_submitted", req.user!.id, "system", {
+        readingId,
+        clientId: req.user!.id,
+        readerId: reading.readerId,
+        rating,
+        hasReviewText: !!review,
+        readingType: reading.readingType,
+        durationSeconds: reading.durationSeconds,
+      });
 
       res.json(updated);
     } catch (err) {
