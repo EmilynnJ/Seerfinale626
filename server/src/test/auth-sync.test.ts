@@ -37,6 +37,12 @@ vi.mock('../utils/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock('../config', () => ({
+  config: {
+    adminEmails: ['admin@example.com'],
+  },
+}));
+
 describe('POST /api/auth/sync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
