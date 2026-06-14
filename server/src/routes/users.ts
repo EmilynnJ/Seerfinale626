@@ -35,7 +35,10 @@ router.get("/readers", async (_req, res, next) => {
 
     res.json(result);
   } catch (err) {
-    next(err);
+    logger.error({ err }, "GET /api/readers database error");
+    // Return a structured 500 instead of letting the generic handler leak
+    // internals. The client can retry or show a fallback UI.
+    res.status(500).json({ error: "Unable to load readers. Please try again." });
   }
 });
 

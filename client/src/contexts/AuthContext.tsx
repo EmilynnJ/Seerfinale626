@@ -56,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setUser(userData);
       setAuthError(null);
+      setIsLoading(false);
 
       // F-045: strip sensitive financial fields from product analytics.
       pendo.identify({
@@ -76,8 +77,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('[AuthContext] Failed to fetch/sync user profile:', err);
       setUser(null);
       setAuthError(message);
-    } finally {
-      setIsLoading(false);
+      // Intentionally do NOT setIsLoading(false) here. Staying in the loading
+      // state prevents the DashboardTrafficController from redirecting to /
+      // while the Auth0/db sync is broken. The error boundary/UI can render
+      // the authError toast instead.
     }
   }, [auth0IsAuth, auth0User, getAccessTokenSilently]);
 

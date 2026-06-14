@@ -9,6 +9,7 @@ import { validateBody } from "../middleware/validate";
 import { logger } from "../utils/logger";
 import { config } from "../config";
 import { AppError } from "../middleware/error-handler";
+import { generalLimiter } from "../middleware/rate-limit";
 
 const router = Router();
 
@@ -33,11 +34,15 @@ function jwtClaims(req: Request): { auth0Id?: string; email?: string } {
 
 /**
  * JWT-only guard: verifies the Auth0 token signature and audience but does
- * NOT require the user row to exist in Neon. Used on /sync so that a brand
- * new user can create their Neon row on first login without hitting the
+ * NOT resolve the user row in Neon. Used on /sync so that a brand new user
+ * can create their Neon row on first login without hitting the
  * chicken-and-egg 401 that resolveUser would return.
+ *
+ * This is intentionally named `requireAuth` here so the route reads as
+ * `requireAuth, generalLimiter` per the security spec, while the rest of the
+ * app continues to use the combined `requireAuth` exported by middleware/auth.
  */
-function jwtOnly(req: Request, res: Response, next: NextFunction): void {
+function requireAuth(req: Request, res: Response, next: NextFunction): void {
   (checkJwt as RequestHandler)(req, res, next);
 }
 
@@ -48,7 +53,7 @@ function sanitizeUser(user: typeof users.$inferSelect) {
 
 // POST /api/auth/sync — Upsert Auth0 user into Neon on first (and subsequent) logins.
 // Uses jwtOnly — NOT requireAuth — so the user row does not need to exist yet.
-router.post("/sync", jwtOnly, validateBody(callbackSchema), async (req, res, next) => {
+router.post("/sync", requireAuth, generalLimiter, validateBody(callbackSchema), async (req, res, next) => {
   try {
     const db = getDb();
     const body = req.body;

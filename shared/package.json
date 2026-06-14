@@ -10,12 +10,28 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./schema": {
+      "types": "./dist/schema.d.ts",
       "import": "./dist/schema.js",
-      "types": "./dist/schema.d.ts"
+      "require": "./dist/schema.js",
+      "default": "./dist/schema.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js",
+      "require": "./dist/types.js",
+      "default": "./dist/types.js"
+    },
+    "./validators": {
+      "types": "./dist/validators.d.ts",
+      "import": "./dist/validators.js",
+      "require": "./dist/validators.js",
+      "default": "./dist/validators.js"
     }
   },
   "scripts": {

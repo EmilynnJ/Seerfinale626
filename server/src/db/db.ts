@@ -7,7 +7,13 @@ import { logger } from '../utils/logger';
 
 neonConfig.webSocketConstructor = ws;
 
-export const pool = new Pool({ connectionString: config.database.url });
+export const pool = new Pool({
+  connectionString: config.database.url,
+  // Fail fast on bad/missing connection strings instead of hanging the
+  // Vercel serverless function until the platform kills it.
+  connectionTimeoutMillis: 10000,
+  idleTimeoutMillis: 30000,
+});
 pool.on('error', (err) => {
   logger.error({ err }, 'Unexpected database pool error');
 });
