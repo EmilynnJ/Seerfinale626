@@ -15,6 +15,7 @@ import {
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { validateBody } from "../middleware/validate";
+import { strictLimiter } from "../middleware/rate-limit";
 import { config } from "../config";
 import { logger } from "../utils/logger";
 import { auth0ManagementService } from "../services/auth0-management";
@@ -155,7 +156,9 @@ router.post("/readers", validateBody(createReaderSchema), async (req, res, next)
       return;
     }
 
-    // 2) Create a Stripe Connect Express account for payouts.
+    // 2) Create a Stripe Connect Express account for payouts. F-005: on failure
+    // we compensate by deleting the Auth0 user we just created so the operator
+    // is not left with a half-provisioned account.
     let account: Stripe.Account;
     try {
       account = await stripe.accounts.create({
@@ -170,11 +173,22 @@ router.post("/readers", validateBody(createReaderSchema), async (req, res, next)
     } catch (err) {
       logger.error(
         { err, auth0Id: auth0Result.auth0Id },
-        "Stripe Connect account creation failed after Auth0 user was created",
+        "Stripe Connect account creation failed; compensating by deleting the Auth0 user",
       );
+      try {
+        await auth0ManagementService.deleteUser(auth0Result.auth0Id);
+        logger.info(
+          { auth0Id: auth0Result.auth0Id },
+          "Compensating Auth0 user deletion succeeded",
+        );
+      } catch (compensateErr) {
+        logger.error(
+          { err: compensateErr, auth0Id: auth0Result.auth0Id },
+          "Compensating Auth0 user deletion FAILED — manual cleanup required",
+        );
+      }
       res.status(502).json({
-        error:
-          "Auth0 user was created but Stripe Connect account creation failed. Please retry or remove the Auth0 user manually.",
+        error: "Stripe Connect account creation failed. The Auth0 user was removed automatically; please retry.",
         code: "STRIPE_ACCOUNT_FAILED",
       });
       return;
@@ -448,7 +462,7 @@ const adjustSchema = z.object({
   note: z.string().min(1).max(500),
 });
 
-router.post("/balance-adjust", validateBody(adjustSchema), async (req, res, next) => {
+router.post("/balance-adjust", strictLimiter, validateBody(adjustSchema), async (req, res, next) => {
   try {
     const db = getDb();
     const { userId, amount, note } = req.body;
@@ -549,7 +563,7 @@ router.get("/transactions", async (req, res, next) => {
 });
 
 // ─── POST /api/admin/payouts/:readerId — Trigger reader payout ──────────────
-router.post("/payouts/:readerId", async (req, res, next) => {
+router.post("/payouts/:readerId", strictLimiter, async (req, res, next) => {
   try {
     const db = getDb();
     const readerId = parseInt(req.params.readerId!, 10);
@@ -800,12 +814,59 @@ router.patch("/flags/:id/resolve", async (req, res, next) => {
   }
 });
 
-// ─── DELETE /api/admin/posts/:id — Delete forum post ────────────────────────
+// F-017: validate isLocked explicitly so `null`/`undefined`/missing do not
+// silently coerce to `true`. F-006: return 404 on no-op.
+const lockSchema = z.object({ isLocked: z.boolean() }).strict();
+
+router.patch(
+  "/posts/:id/lock",
+  validateBody(lockSchema),
+  async (req, res, next) => {
+    try {
+      const db = getDb();
+      const postId = parseInt(req.params.id!, 10);
+      if (isNaN(postId)) {
+        res.status(400).json({ error: "Invalid post ID" });
+        return;
+      }
+      const { isLocked } = req.body as { isLocked: boolean };
+
+      const [p] = await db
+        .update(forumPosts)
+        .set({ isLocked, updatedAt: new Date() })
+        .where(eq(forumPosts.id, postId))
+        .returning();
+
+      if (!p) {
+        res.status(404).json({ error: "Post not found" });
+        return;
+      }
+
+      res.json(p);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// F-006: return 404 on no-op so chained tooling can detect missed deletes.
 router.delete("/posts/:id", async (req, res, next) => {
   try {
     const db = getDb();
     const postId = parseInt(req.params.id!, 10);
-    await db.delete(forumPosts).where(eq(forumPosts.id, postId));
+    if (isNaN(postId)) {
+      res.status(400).json({ error: "Invalid post ID" });
+      return;
+    }
+    const [deleted] = await db
+      .delete(forumPosts)
+      .where(eq(forumPosts.id, postId))
+      .returning({ id: forumPosts.id });
+
+    if (!deleted) {
+      res.status(404).json({ error: "Post not found" });
+      return;
+    }
 
     pendoTrack("admin_content_moderated", req.user!.id, "system", {
       adminId: req.user!.id,
@@ -819,12 +880,23 @@ router.delete("/posts/:id", async (req, res, next) => {
   }
 });
 
-// ─── DELETE /api/admin/comments/:id — Delete forum comment ──────────────────
 router.delete("/comments/:id", async (req, res, next) => {
   try {
     const db = getDb();
     const commentId = parseInt(req.params.id!, 10);
-    await db.delete(forumComments).where(eq(forumComments.id, commentId));
+    if (isNaN(commentId)) {
+      res.status(400).json({ error: "Invalid comment ID" });
+      return;
+    }
+    const [deleted] = await db
+      .delete(forumComments)
+      .where(eq(forumComments.id, commentId))
+      .returning({ id: forumComments.id });
+
+    if (!deleted) {
+      res.status(404).json({ error: "Comment not found" });
+      return;
+    }
 
     pendoTrack("admin_content_moderated", req.user!.id, "system", {
       adminId: req.user!.id,
@@ -833,30 +905,6 @@ router.delete("/comments/:id", async (req, res, next) => {
     });
 
     res.json({ ok: true });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ─── PATCH /api/admin/posts/:id/lock — Lock/unlock forum post ───────────────
-router.patch("/posts/:id/lock", async (req, res, next) => {
-  try {
-    const db = getDb();
-    const postId = parseInt(req.params.id!, 10);
-    const isLocked = req.body.isLocked !== false;
-
-    const [p] = await db
-      .update(forumPosts)
-      .set({ isLocked, updatedAt: new Date() })
-      .where(eq(forumPosts.id, postId))
-      .returning();
-
-    if (!p) {
-      res.status(404).json({ error: "Post not found" });
-      return;
-    }
-
-    res.json(p);
   } catch (err) {
     next(err);
   }

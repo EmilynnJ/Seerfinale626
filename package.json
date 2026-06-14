@@ -1,6 +1,10 @@
 {
   "name": "soulseer",
   "private": true,
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10"
+  },
   "workspaces": [
     "shared",
     "client",

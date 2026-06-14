@@ -90,15 +90,18 @@
 (List Paragraph) Each reading session gets a unique Agora channel name (e.g., reading_[readingId])
 (List Paragraph) Client fetches token from server before joining Agora channel
 (List Paragraph) Token expiry: 3600 seconds (1 hour) — sufficient for any single session
-(Heading 2) 8.4 Server-Side Billing
+(Heading 2) 8.4 Server-Authoritative Billing
 (None) ⚠️  Billing MUST be server-side. Never trust the client to report session duration.
-(List Paragraph) When both participants join Agora and call POST /api/readings/:id/start, server records startedAt timestamp
-(List Paragraph) Server-side billing timer fires every 60 seconds
-(List Paragraph) Each tick: deduct pricePerMinute from client balance, credit reader 70%, platform keeps 30%
-(List Paragraph) Before each deduction: check client has sufficient balance
-(List Paragraph) If balance is insufficient: immediately end session, notify both parties via WebSocket push, finalize reading record
-(List Paragraph) Session end: record duration, totalCost, completedAt. Mark paymentStatus = 'paid'.
-(List Paragraph) Prevent race conditions: use database transactions for balance deduction + credit in a single atomic operation
+
+(List Paragraph) Billing is heartbeat-driven, NOT cron-driven. Both participants send POST /api/readings/:id/heartbeat every ~30s; the server charges any whole minutes owed since the last settle.
+(List Paragraph) This works correctly on stateless serverless (Vercel) where an in-process setInterval would not survive between invocations — there is no in-memory timer.
+(List Paragraph) When both participants join Agora and call POST /api/readings/:id/start, the server records the startedAt timestamp.
+(List Paragraph) On each heartbeat, in a single transaction: SELECT ... FOR UPDATE the reading and the client row, compute owed minutes (wall-clock from startedAt minus already-billed durationSeconds), charge as many whole minutes as the client can afford, and update durationSeconds, totalCharged, readerEarned, platformEarned.
+(List Paragraph) Revenue split: 60% to the reader, 40% to the platform (READER_SHARE = 0.6 in shared/src/validators.ts — the single source of truth).
+(List Paragraph) If affordableMinutes < owedMinutes (insufficient balance): end the session as completed, notify both parties via WebSocket push (reading:insufficient_balance), finalize the reading record with paymentStatus = 'paid' for the time billed so far.
+(List Paragraph) Session end: settle() runs one last time inside the /end handler, then the reader is credited and the client is debited in a final transaction. paymentStatus = 'paid' if totalCharged > 0.
+(List Paragraph) Prevent race conditions: every charge is wrapped in db.transaction(...) with SELECT ... FOR UPDATE on the reading row, so concurrent heartbeats from both participants serialize naturally and a minute is never billed twice.
+(List Paragraph) Grace period: GRACE_PERIOD_MS = 120_000 (2 minutes). Active sessions whose lastHeartbeat lapses, and paused sessions whose updatedAt lapses, are opportunistically ended as missed during the next heartbeat. The 2-minute window is what the client UI tells the user before billing stops.
 (Heading 2) 8.5 Disconnection & Grace Period
 (List Paragraph) If either participant disconnects unexpectedly: pause billing timer, start a 2-minute grace period
 (List Paragraph) If the disconnected user reconnects within 2 minutes: resume session, restart billing

@@ -149,6 +149,20 @@ router.get("/with/:userId", requireAuth, async (req, res, next) => {
       return;
     }
 
+    // F-019: enforce the same premium-messaging policy on GET as on POST.
+    // Messaging is only available between clients and readers (admins are
+    // unrestricted). Without this, any client could enumerate arbitrary
+    // user IDs and read the message thread.
+    const readerInvolvedGet =
+      me === other ||
+      me.role === "admin" ||
+      counterpart.role === "reader" ||
+      me.role === "reader";
+    if (!readerInvolvedGet) {
+      res.status(403).json({ error: "Messaging is only available with readers" });
+      return;
+    }
+
     const thread = await db
       .select()
       .from(messages)

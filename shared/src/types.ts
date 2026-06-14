@@ -53,13 +53,18 @@ export interface PaginatedResponse<T> {
 }
 
 // ─── Business Constants ─────────────────────────────────────────────────────
+//
+// F-011: removed PLATFORM_FEE_PERCENT (was 30) and READER_SHARE_PERCENT (was 70)
+// because they were unused AND disagreed with the canonical READER_SHARE = 0.6
+// in shared/src/validators.ts. The single source of truth for the revenue split
+// is now `READER_SHARE` in validators.ts. Do not re-introduce separate
+// percent constants here — keep the canonical float in one place.
+//
+// F-057: MAX_RATING / MIN_RATING removed; use `z.number().int().min(1).max(5)`
+// at the call site (already done in validators.ts).
 
-export const PLATFORM_FEE_PERCENT = 30;
-export const READER_SHARE_PERCENT = 70;
 export const MIN_TOP_UP_CENTS = 500;
 export const MIN_BALANCE_FOR_READING_CENTS = 500;
 export const BILLING_INTERVAL_SECONDS = 60;
 export const DISCONNECT_GRACE_SECONDS = 120;
 export const FORUM_POSTS_PER_PAGE = 10;
-export const MAX_RATING = 5;
-export const MIN_RATING = 1;

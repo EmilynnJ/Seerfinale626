@@ -6,7 +6,9 @@ import { users, forumPosts, forumComments, forumFlags } from "../db/schema";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { validateBody } from "../middleware/validate";
+import { strictLimiter } from "../middleware/rate-limit";
 import { pendoTrack } from "../services/pendo-track";
+import { createFlagSchema } from "@soulseer/shared";
 
 const router = Router();
 
@@ -148,7 +150,7 @@ router.post("/posts/:id/comments", requireAuth, validateBody(createCommentSchema
 // ─── Flag post — POST /api/forum/posts/:id/flag ─────────────────────────────
 const flagPostSchema = z.object({ reason: z.string().min(1).max(1000) });
 
-router.post("/posts/:id/flag", requireAuth, validateBody(flagPostSchema), async (req, res, next) => {
+router.post("/posts/:id/flag", requireAuth, strictLimiter, validateBody(flagPostSchema), async (req, res, next) => {
   try {
     const db = getDb();
     const postId = parseInt(req.params.id!, 10);
@@ -180,7 +182,7 @@ router.post("/posts/:id/flag", requireAuth, validateBody(flagPostSchema), async 
 });
 
 // ─── Flag comment — POST /api/forum/comments/:id/flag ───────────────────────
-router.post("/comments/:id/flag", requireAuth, validateBody(flagPostSchema), async (req, res, next) => {
+router.post("/comments/:id/flag", requireAuth, strictLimiter, validateBody(flagPostSchema), async (req, res, next) => {
   try {
     const db = getDb();
     const commentId = parseInt(req.params.id!, 10);
@@ -212,14 +214,17 @@ router.post("/comments/:id/flag", requireAuth, validateBody(flagPostSchema), asy
 });
 
 // ─── Legacy flag endpoint (backward compat) ─────────────────────────────────
-const flagSchema = z.object({ postId: z.number().int().optional(), commentId: z.number().int().optional(), reason: z.string().min(1).max(1000) });
-
-router.post("/flags", requireAuth, validateBody(flagSchema), async (req, res, next) => {
+// F-018: use the shared createFlagSchema which already enforces exactly-one of
+// postId/commentId via .refine. The previous hand-rolled schema allowed both
+// to be set, producing a flag row that referenced both targets.
+router.post("/flags", requireAuth, strictLimiter, validateBody(createFlagSchema), async (req, res, next) => {
   try {
     const db = getDb();
-    if (!req.body.postId && !req.body.commentId) { res.status(400).json({ error: "Provide postId or commentId" }); return; }
     const [flag] = await db.insert(forumFlags).values({
-      reporterId: req.user!.id, postId: req.body.postId ?? null, commentId: req.body.commentId ?? null, reason: req.body.reason,
+      reporterId: req.user!.id,
+      postId: req.body.postId ?? null,
+      commentId: req.body.commentId ?? null,
+      reason: req.body.reason,
     }).returning();
     res.status(201).json(flag);
   } catch (err) { next(err); }

@@ -11,6 +11,9 @@ import { logger } from '../utils/logger';
  *
  * When BREVO_API_KEY is not configured, all sends are no-ops and return
  * `{ sent: false, reason: 'disabled' }` so callers can degrade gracefully.
+ *
+ * F-012: all customer-facing links (CTA, unsubscribe, footer) are now
+ * derived from `config.frontendUrl` so they survive a domain migration.
  */
 
 export interface BrevoSendParams {
@@ -64,6 +67,7 @@ class BrevoService {
           accept: 'application/json',
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(5000),
       });
 
       if (!res.ok) {
@@ -117,8 +121,8 @@ function stripHtml(html: string): string {
 }
 
 function renderWelcomeHtml(email: string): string {
-  const unsubscribeUrl =
-    `https://soulseerpsychics.com/unsubscribe?email=${encodeURIComponent(email)}`;
+  const frontend = config.frontendUrl;
+  const unsubscribeUrl = `${frontend}/unsubscribe?email=${encodeURIComponent(email)}`;
   return `<!DOCTYPE html>
 <html>
   <body style="font-family: Georgia, 'Playfair Display', serif; background:#0A0A0F; color:#FFFFFF; padding:32px;">
@@ -133,13 +137,13 @@ function renderWelcomeHtml(email: string): string {
         Ready to get started? Browse our currently online readers and find the perfect match for your journey.
       </p>
       <div style="text-align:center; margin:24px 0;">
-        <a href="https://soulseerpsychics.com/readers"
+        <a href="${frontend}/readers"
            style="display:inline-block; background:#FF69B4; color:#0A0A0F; font-weight:bold; padding:12px 24px; border-radius:8px; text-decoration:none;">
           Browse Readers
         </a>
       </div>
       <p style="font-size:12px; color:#999; margin-top:32px; text-align:center;">
-        You're receiving this because you subscribed at soulseerpsychics.com.<br>
+        You're receiving this because you subscribed at ${frontend.replace(/^https?:\/\//, '')}.<br>
         <a href="${unsubscribeUrl}" style="color:#D4AF37;">Unsubscribe</a>
       </p>
     </div>
@@ -148,11 +152,12 @@ function renderWelcomeHtml(email: string): string {
 }
 
 function renderWelcomeText(): string {
+  const frontend = config.frontendUrl;
   return `Welcome to the SoulSeer soul tribe ✨
 
 You're now on the list. We'll share new reader announcements, platform updates, and occasional wisdom from our community of gifted psychics.
 
-Browse online readers: https://soulseerpsychics.com/readers
+Browse online readers: ${frontend}/readers
 
 You can unsubscribe at any time from your account settings or the link at the bottom of any newsletter email.`;
 }

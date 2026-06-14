@@ -2,47 +2,15 @@ import { Router } from "express";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
-import { appendFileSync } from "fs";
-import { resolve } from "path";
 import { getDb } from "../db/db";
 import { users } from "../db/schema";
 import { requireAuth, checkJwt } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import { logger } from "../utils/logger";
 import { config } from "../config";
+import { AppError } from "../middleware/error-handler";
 
 const router = Router();
-
-const DEBUG_LOG_PATHS = [
-  resolve(__dirname, "../../../debug-f0e72b.log"),
-  resolve(process.cwd(), "debug-f0e72b.log"),
-  resolve(process.cwd(), "../debug-f0e72b.log"),
-];
-
-function debugLog(
-  location: string,
-  message: string,
-  data: Record<string, unknown>,
-  hypothesisId: string,
-): void {
-  const line = `${JSON.stringify({
-    sessionId: "f0e72b",
-    location,
-    message,
-    data,
-    hypothesisId,
-    timestamp: Date.now(),
-    runId: "post-fix",
-  })}\n`;
-  for (const logPath of DEBUG_LOG_PATHS) {
-    try {
-      appendFileSync(logPath, line);
-      return;
-    } catch {
-      /* try next path */
-    }
-  }
-}
 
 const callbackSchema = z.object({
   auth0Id: z.string().min(1),
@@ -86,13 +54,6 @@ router.post("/sync", jwtOnly, validateBody(callbackSchema), async (req, res, nex
     const body = req.body;
     const { auth0Id, email: jwtEmail } = jwtClaims(req);
 
-    // #region agent log
-    debugLog("auth.ts:sync:entry", "POST /sync reached (jwtOnly, no resolveUser)", {
-      hasAuth0Id: !!auth0Id,
-      hasJwtEmail: !!jwtEmail,
-    }, "A");
-    // #endregion
-
     if (!auth0Id) {
       res.status(401).json({ error: "Missing authentication subject" });
       return;
@@ -105,6 +66,8 @@ router.post("/sync", jwtOnly, validateBody(callbackSchema), async (req, res, nex
     if (body.fullName) profileUpdates.fullName = body.fullName;
     if (body.profileImage) profileUpdates.profileImage = body.profileImage;
 
+    // F-016: explicit guard in case the ON CONFLICT upsert returns no row
+    // (e.g. concurrent delete window).
     const [upserted] = await db
       .insert(users)
       .values({
@@ -124,7 +87,11 @@ router.post("/sync", jwtOnly, validateBody(callbackSchema), async (req, res, nex
       })
       .returning();
 
-    let finalUser = upserted!;
+    if (!upserted) {
+      throw new AppError(500, "sync_returned_no_row");
+    }
+
+    let finalUser = upserted;
 
     if (insertRole === "admin" && finalUser.role !== "admin") {
       const [promoted] = await db
@@ -132,15 +99,11 @@ router.post("/sync", jwtOnly, validateBody(callbackSchema), async (req, res, nex
         .set({ role: "admin", updatedAt: new Date() })
         .where(eq(users.id, finalUser.id))
         .returning();
-      finalUser = promoted!;
+      if (!promoted) {
+        throw new AppError(500, "promote_returned_no_row");
+      }
+      finalUser = promoted;
     }
-
-    // #region agent log
-    debugLog("auth.ts:sync:exit", "POST /sync upsert complete", {
-      userId: finalUser.id,
-      role: finalUser.role,
-    }, "A");
-    // #endregion
 
     logger.info({ userId: finalUser.id, email, role: finalUser.role }, "User synced via upsert");
     res.json(sanitizeUser(finalUser));
