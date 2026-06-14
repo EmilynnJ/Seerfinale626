@@ -21,7 +21,7 @@ RUN npm install
 # Copy source code
 COPY . .
 
-# Build all packages
+# Build all packages (shared → server → client, per root package.json)
 RUN npm run build
 
 # Stage 2: Production
@@ -59,6 +59,11 @@ USER nodejs
 
 # Expose port
 EXPOSE 8080
+
+# F-015: HEALTHCHECK so Fly's orchestrator (and any future k8s) can tell a
+# healthy idle process from a hung one. Uses node's global fetch (Node 20+).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # Start the production server
 CMD ["node", "server/dist/src/production.js"]

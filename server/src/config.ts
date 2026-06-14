@@ -91,6 +91,15 @@ const envSchema = z.object({
   ADMIN_EMAILS: z.string().default('emilynnj14@gmail.com'),
   POSTHOG_API_KEY: z.string().default(''),
   POSTHOG_HOST: z.string().default('https://us.i.posthog.com'),
+  // F-009: Pendo integration key moved out of source so it can be rotated
+  // without a redeploy and isolated per environment.
+  PENDO_INTEGRATION_KEY: z.string().default(''),
+  // F-012: Frontend URL used in transactional email templates. Falls back to
+  // the configured Vercel deployment; override for custom domains.
+  FRONTEND_URL: z
+    .string()
+    .url()
+    .default('https://soulseerpsychics.vercel.app'),
 });
 
 function loadConfig() {
@@ -158,4 +167,9 @@ export const config = {
     host: env.POSTHOG_HOST,
     enabled: Boolean(env.POSTHOG_API_KEY),
   },
+  pendo: {
+    integrationKey: env.PENDO_INTEGRATION_KEY,
+    enabled: Boolean(env.PENDO_INTEGRATION_KEY),
+  },
+  frontendUrl: env.FRONTEND_URL,
 } as const;

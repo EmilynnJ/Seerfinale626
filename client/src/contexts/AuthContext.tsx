@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import { apiService } from '../services/api';
 import type { AuthState, User } from '../types';
@@ -8,29 +8,6 @@ export interface AuthStateWithError extends AuthState {
 }
 
 export const AuthContext = createContext<AuthStateWithError | null>(null);
-
-const DEBUG_ENDPOINT = 'http://127.0.0.1:7530/ingest/5d16fd92-dfa5-4af3-be5e-8af5bd6919ee';
-
-function debugLog(
-  location: string,
-  message: string,
-  data: Record<string, unknown>,
-  hypothesisId: string,
-): void {
-  fetch(DEBUG_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'f0e72b' },
-    body: JSON.stringify({
-      sessionId: 'f0e72b',
-      location,
-      message,
-      data,
-      hypothesisId,
-      timestamp: Date.now(),
-      runId: 'post-fix',
-    }),
-  }).catch(() => {});
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const {
@@ -62,10 +39,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       apiService.setAccessToken(token);
 
       // Step B: sync first — creates/updates the Neon row before /me can resolve it.
-      // #region agent log
-      debugLog('AuthContext.tsx:sync:start', 'POST /api/auth/sync starting', {}, 'B');
-      // #endregion
-
       await apiService.post('/api/auth/sync', {
         auth0Id: auth0User.sub,
         email: auth0User.email,
@@ -73,17 +46,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profileImage: auth0User.picture,
       });
 
-      // #region agent log
-      debugLog('AuthContext.tsx:sync:done', 'POST /api/auth/sync finished', {}, 'B');
-      debugLog('AuthContext.tsx:me:start', 'GET /api/auth/me starting', {}, 'B');
-      // #endregion
-
       // Step C: load the authoritative DB profile (includes role).
-      const userData = await apiService.get<User>('/api/auth/me');
-
-      // #region agent log
-      debugLog('AuthContext.tsx:me:done', 'GET /api/auth/me finished', { role: userData.role }, 'C');
-      // #endregion
+      const userData = await apiService.get<User>('/api/me');
 
       // Step D: only commit state once role is present.
       if (!userData.role) {
@@ -93,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(userData);
       setAuthError(null);
 
+      // F-045: strip sensitive financial fields from product analytics.
       pendo.identify({
         visitor: {
           id: userData.id,
@@ -101,11 +66,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           username: userData.username,
           role: userData.role,
           is_online: userData.isOnline,
-          balance: userData.balance,
-          total_readings: userData.totalReadings,
-          pricing_chat: userData.pricingChat,
-          pricing_voice: userData.pricingVoice,
-          pricing_video: userData.pricingVideo,
           created_at: userData.createdAt,
           updated_at: userData.updatedAt,
         },
@@ -114,9 +74,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const message =
         err instanceof Error ? err.message : 'Unable to load your account profile.';
       console.error('[AuthContext] Failed to fetch/sync user profile:', err);
-      // #region agent log
-      debugLog('AuthContext.tsx:error', 'Auth pipeline failed', { message }, 'D');
-      // #endregion
       setUser(null);
       setAuthError(message);
     } finally {
@@ -146,19 +103,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const dbUser = user;
   const hasDbRole = !!dbUser?.role;
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user: dbUser,
-        isAuthenticated: auth0IsAuth && hasDbRole,
-        isLoading: auth0Loading || isLoading,
-        authError,
-        login,
-        logout,
-        refreshUser,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  // F-065: memoize the context value so consumers don't re-render on every
+  // parent render. The deps are exactly the values that affect downstream UIs.
+  const value = useMemo<AuthStateWithError>(
+    () => ({
+      user: dbUser,
+      isAuthenticated: auth0IsAuth && hasDbRole,
+      isLoading: auth0Loading || isLoading,
+      authError,
+      login,
+      logout,
+      refreshUser,
+    }),
+    [dbUser, auth0IsAuth, hasDbRole, auth0Loading, isLoading, authError, login, logout, refreshUser],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

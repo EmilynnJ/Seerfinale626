@@ -30,29 +30,6 @@ import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import { TermsOfServicePage } from './pages/TermsOfServicePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
-const DEBUG_ENDPOINT = 'http://127.0.0.1:7530/ingest/5d16fd92-dfa5-4af3-be5e-8af5bd6919ee';
-
-function debugLog(
-  location: string,
-  message: string,
-  data: Record<string, unknown>,
-  hypothesisId: string,
-): void {
-  fetch(DEBUG_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'f0e72b' },
-    body: JSON.stringify({
-      sessionId: 'f0e72b',
-      location,
-      message,
-      data,
-      hypothesisId,
-      timestamp: Date.now(),
-      runId: 'post-fix',
-    }),
-  }).catch(() => {});
-}
-
 /**
  * Central traffic controller for /dashboard — waits for the DB role, then
  * routes to the correct role-specific dashboard. Never falls back to /.
@@ -94,10 +71,6 @@ function DashboardTrafficController() {
   if (!isAuthenticated || !user?.role) {
     return <Navigate to="/login" replace />;
   }
-
-  // #region agent log
-  debugLog('App.tsx:DashboardTrafficController', 'Routing by role', { role: user.role }, 'E');
-  // #endregion
 
   switch (user.role) {
     case 'admin':

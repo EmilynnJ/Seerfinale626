@@ -1,9 +1,9 @@
-# fly.toml app configuration file generated for windsurf-project2 on 2026-03-30T15:42:53Z
+# fly.toml app configuration file generated for soulseer
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'windsurf-project2'
+app = 'soulseer'
 primary_region = 'ord'
 
 [build]
@@ -11,10 +11,20 @@ primary_region = 'ord'
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = 'stop'
+  # F-002 (critical): the WebSocket server must stay running so live readings
+  # are not dropped when the machine idles. min_machines_running = 1 keeps one
+  # warm instance; auto_stop is removed entirely.
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
   processes = ['app']
+
+  [http_service.checks]
+    [http_service.checks.health]
+      interval = '15s'
+      timeout = '5s'
+      grace_period = '10s'
+      method = 'GET'
+      path = '/api/health'
 
 [[vm]]
   memory = '1gb'
