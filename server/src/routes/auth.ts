@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { getDb } from "../db/db";
 import { users } from "../db/schema";
-import { requireAuth, checkJwt } from "../middleware/auth";
+import { checkJwt } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import { logger } from "../utils/logger";
 import { config } from "../config";
@@ -88,7 +88,7 @@ router.post("/sync", jwtOnly, validateBody(callbackSchema), async (req, res, nex
       .returning();
 
     if (!upserted) {
-      throw new AppError(500, "sync_returned_no_row");
+      throw new Error("sync_failed");
     }
 
     let finalUser = upserted;
@@ -112,17 +112,5 @@ router.post("/sync", jwtOnly, validateBody(callbackSchema), async (req, res, nex
   }
 });
 
-router.get("/me", requireAuth, async (req, res, next) => {
-  try {
-    if (!req.user) {
-      res.status(401).json({ error: "Not authenticated" });
-      return;
-    }
-    const { auth0Id, stripeAccountId, stripeCustomerId, ...safeUser } = req.user;
-    res.json({ ...safeUser, accountBalance: safeUser.balance });
-  } catch (err) {
-    next(err);
-  }
-});
 
 export default router;

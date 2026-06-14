@@ -127,7 +127,7 @@ router.get("/conversations", requireAuth, async (req, res, next) => {
 router.get("/with/:userId", requireAuth, async (req, res, next) => {
   try {
     const db = getDb();
-    const me = req.user!.id;
+    const myId = req.user!.id;
     const other = parseInt(req.params.userId ?? "", 10);
     if (isNaN(other)) {
       res.status(400).json({ error: "Invalid user ID" });
@@ -154,23 +154,23 @@ router.get("/with/:userId", requireAuth, async (req, res, next) => {
     // unrestricted). Without this, any client could enumerate arbitrary
     // user IDs and read the message thread.
     //
-    // CRITICAL REPAIR: fetch the caller's full user record from the DB so we
-    // can read .role explicitly (the previous `req.user!` access relied on
-    // an Express-augmented field that is just an id; we want the role).
-    const meId = req.user!.id;
-    const [meUser] = await db
+    // CRITICAL REPAIR (build-error fix): fetch the caller's full user record
+    // from the DB so we can read .role explicitly. The previous code tried to
+    // access user.role on a value that was just an id, which produced a
+    // TypeScript build error ("Property 'role' does not exist on type 'number'").
+    const [me] = await db
       .select()
       .from(users)
-      .where(eq(users.id, meId));
-    if (!meUser) {
+      .where(eq(users.id, myId));
+    if (!me) {
       res.status(401).json({ error: "Caller user not found" });
       return;
     }
     const readerInvolvedGet =
-      meUser.id === other ||
-      meUser.role === "admin" ||
+      me.id === other ||
+      me.role === "admin" ||
       counterpart.role === "reader" ||
-      meUser.role === "reader";
+      me.role === "reader";
     if (!readerInvolvedGet) {
       res.status(403).json({ error: "Messaging is only available with readers" });
       return;
@@ -181,8 +181,8 @@ router.get("/with/:userId", requireAuth, async (req, res, next) => {
       .from(messages)
       .where(
         or(
-          and(eq(messages.senderId, me), eq(messages.recipientId, other)),
-          and(eq(messages.senderId, other), eq(messages.recipientId, me)),
+          and(eq(messages.senderId, myId), eq(messages.recipientId, other)),
+          and(eq(messages.senderId, other), eq(messages.recipientId, myId)),
         ),
       )
       .orderBy(messages.createdAt)
@@ -192,7 +192,7 @@ router.get("/with/:userId", requireAuth, async (req, res, next) => {
     const now = new Date();
     const toMarkRead = thread.filter(
       (m) =>
-        m.recipientId === me &&
+        m.recipientId === myId &&
         m.readAt === null &&
         (m.priceCents === 0 || m.isUnlocked),
     );
@@ -209,7 +209,7 @@ router.get("/with/:userId", requireAuth, async (req, res, next) => {
 
     res.json({
       counterpart,
-      messages: thread.map((m) => presentMessage(m, me)),
+      messages: thread.map((m) => presentMessage(m, myId)),
     });
   } catch (err) {
     next(err);

@@ -157,8 +157,8 @@ router.get("/me", requireAuth, async (req, res, next) => {
       return;
     }
     const { auth0Id, stripeAccountId, stripeCustomerId, ...safe } = req.user;
-    // Include accountBalance alias so both /api/me and /api/auth/me return
-    // a consistent shape that satisfies the client User type.
+    // Include accountBalance alias so /api/me returns a consistent shape
+    // that satisfies the client User type.
     res.json({ ...safe, accountBalance: safe.balance });
   } catch (err) {
     next(err);

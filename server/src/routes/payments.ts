@@ -72,7 +72,7 @@ router.post(
         // so we have an explicit `balanceBefore` value to feed both the
         // transactions row and the post-tx pendoTrack call.
         const [user] = await db
-          .select({ id: users.id, balance: users.balance })
+          .select({ id: users.id, accountBalance: users.balance })
           .from(users)
           .where(eq(users.id, userId));
         if (!user) {
@@ -80,7 +80,7 @@ router.post(
           res.json({ received: true });
           return;
         }
-        const balanceBefore = user.balance;
+        const balanceBefore = user.accountBalance;
         const capturedBalanceBefore = balanceBefore;
 
         await db.transaction(async (tx) => {
