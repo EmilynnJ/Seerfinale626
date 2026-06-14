@@ -9,6 +9,29 @@ export interface AuthStateWithError extends AuthState {
 
 export const AuthContext = createContext<AuthStateWithError | null>(null);
 
+const DEBUG_ENDPOINT = 'http://127.0.0.1:7530/ingest/5d16fd92-dfa5-4af3-be5e-8af5bd6919ee';
+
+function debugLog(
+  location: string,
+  message: string,
+  data: Record<string, unknown>,
+  hypothesisId: string,
+): void {
+  fetch(DEBUG_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'f0e72b' },
+    body: JSON.stringify({
+      sessionId: 'f0e72b',
+      location,
+      message,
+      data,
+      hypothesisId,
+      timestamp: Date.now(),
+      runId: 'pre-fix',
+    }),
+  }).catch(() => {});
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const {
     isAuthenticated: auth0IsAuth,
@@ -24,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
 
   const refreshUser = useCallback(async () => {
+    // Step A: wait until Auth0 reports authenticated with a profile.
     if (!auth0IsAuth || !auth0User) {
       setUser(null);
       setAuthError(null);
@@ -31,32 +55,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    setIsLoading(true);
+
     try {
       const token = await getAccessTokenSilently();
       apiService.setAccessToken(token);
 
-      // First try /me — works for existing users.
-      let userData: User | null = null;
-      try {
-        userData = await apiService.get<User>('/api/auth/me');
-      } catch {
-        // User not found or /me failed — fall through to sync/create.
-      }
+      // Step B: sync first — creates/updates the Neon row before /me can resolve it.
+      // #region agent log
+      debugLog('AuthContext.tsx:sync:start', 'POST /api/auth/sync starting', {}, 'B');
+      // #endregion
 
-      if (!userData) {
-        // Sync user with backend (creates or updates the user record).
-        userData = await apiService.post<User>('/api/auth/sync', {
-          auth0Id: auth0User.sub,
-          email: auth0User.email,
-          fullName: auth0User.name,
-          profileImage: auth0User.picture,
-        });
+      await apiService.post('/api/auth/sync', {
+        auth0Id: auth0User.sub,
+        email: auth0User.email,
+        fullName: auth0User.name,
+        profileImage: auth0User.picture,
+      });
+
+      // #region agent log
+      debugLog('AuthContext.tsx:sync:done', 'POST /api/auth/sync finished', {}, 'B');
+      debugLog('AuthContext.tsx:me:start', 'GET /api/auth/me starting', {}, 'B');
+      // #endregion
+
+      // Step C: load the authoritative DB profile (includes role).
+      const userData = await apiService.get<User>('/api/auth/me');
+
+      // #region agent log
+      debugLog('AuthContext.tsx:me:done', 'GET /api/auth/me finished', { role: userData.role }, 'C');
+      // #endregion
+
+      // Step D: only commit state once role is present.
+      if (!userData.role) {
+        throw new Error('Account profile is missing a role.');
       }
 
       setUser(userData);
       setAuthError(null);
 
-      // Identify the signed-in user to Pendo
       pendo.identify({
         visitor: {
           id: userData.id,
@@ -72,15 +108,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           pricing_video: userData.pricingVideo,
           created_at: userData.createdAt,
           updated_at: userData.updatedAt,
-        }
+        },
       });
     } catch (err) {
-      // Do NOT clear auth0 session here — that would kick the user back to
-      // Auth0 and cause a redirect loop when the API is temporarily failing.
-      // Instead, surface the error and let the UI show a retry banner.
       const message =
         err instanceof Error ? err.message : 'Unable to load your account profile.';
       console.error('[AuthContext] Failed to fetch/sync user profile:', err);
+      // #region agent log
+      debugLog('AuthContext.tsx:error', 'Auth pipeline failed', { message }, 'D');
+      // #endregion
       setUser(null);
       setAuthError(message);
     } finally {
@@ -89,8 +125,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [auth0IsAuth, auth0User, getAccessTokenSilently]);
 
   useEffect(() => {
-    // Only refresh user when Auth0 has finished loading and is authenticated.
-    // If not authenticated, refreshUser handles clearing the state.
     if (!auth0Loading) {
       void refreshUser();
     }
@@ -109,11 +143,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     auth0Logout({ logoutParams: { returnTo: window.location.origin } });
   }, [auth0Logout]);
 
+  const dbUser = user;
+  const hasDbRole = !!dbUser?.role;
+
   return (
     <AuthContext.Provider
       value={{
-        user,
-        isAuthenticated: auth0IsAuth && !!user,
+        user: dbUser,
+        isAuthenticated: auth0IsAuth && hasDbRole,
         isLoading: auth0Loading || isLoading,
         authError,
         login,

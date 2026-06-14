@@ -35,9 +35,9 @@ function Footer() {
                 </Link>
               </li>
             ))}
-            {isAuthenticated && user && (
+            {user?.role && (
               <li>
-                <Link to={`/dashboard/${user.role}`} className="footer__link">
+                <Link to="/dashboard" className="footer__link">
                   Dashboard
                 </Link>
               </li>

@@ -93,9 +93,9 @@ function Navigation() {
               </NavLink>
             </li>
           ))}
-          {isAuthenticated && user && (
+          {user?.role && (
             <li>
-              <NavLink to={`/dashboard/${user.role}`} className={linkClass}>
+              <NavLink to="/dashboard" className={linkClass}>
                 Dashboard
               </NavLink>
             </li>
@@ -161,8 +161,8 @@ function Navigation() {
             {item.label}
           </NavLink>
         ))}
-        {isAuthenticated && user && (
-          <NavLink to={`/dashboard/${user.role}`} className={mobileLinkClass}>
+        {user?.role && (
+          <NavLink to="/dashboard" className={mobileLinkClass}>
             Dashboard
           </NavLink>
         )}
