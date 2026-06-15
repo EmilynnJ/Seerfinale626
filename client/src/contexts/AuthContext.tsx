@@ -1,5 +1,4 @@
 import { createContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
-import { useAuth0 } from '@auth0/auth0-react';
 import { apiService } from '../services/api';
 import type { AuthState, User } from '../types';
 
@@ -9,116 +8,133 @@ export interface AuthStateWithError extends AuthState {
 
 export const AuthContext = createContext<AuthStateWithError | null>(null);
 
+/**
+ * AuthProvider – Neon Auth (Stack Auth) implementation.
+ *
+ * Session management is handled by the Neon Auth / Stack Auth SDK loaded via
+ * the VITE_STACK_PROJECT_ID + VITE_STACK_PUBLISHABLE_CLIENT_KEY env vars.
+ * The SDK sets a __stack_session cookie / localStorage entry that the server
+ * reads to verify identity.
+ *
+ * Flow:
+ *   1. On mount, call GET /api/auth/session to check if there is a valid
+ *      server-side session.  The server reads the Stack Auth session cookie
+ *      and returns { token, sub, email } or 401.
+ *   2. If a session exists, call POST /api/auth/sync to upsert the Neon row,
+ *      then GET /api/me to load the full DB profile (including role).
+ *   3. login()  &#8214; redirect to /api/auth/login  (Stack Auth hosted UI).
+ *   4. logout() &#8214; call /api/auth/logout, clear local state.
+ */
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const {
-    isAuthenticated: auth0IsAuth,
-    isLoading: auth0Loading,
-    user: auth0User,
-    getAccessTokenSilently,
-    loginWithRedirect,
-    logout: auth0Logout,
-  } = useAuth0();
-
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser]           = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const refreshUser = useCallback(async () => {
-    // Step A: wait until Auth0 reports authenticated with a profile.
-    if (!auth0IsAuth || !auth0User) {
-      setUser(null);
-      setAuthError(null);
-      setIsLoading(false);
-      return;
-    }
-
     setIsLoading(true);
-
     try {
-      const token = await getAccessTokenSilently();
+      // Step A: ask the server whether a valid Neon Auth session exists.
+      const sessionRes = await fetch('/api/auth/session', { credentials: 'include' });
+
+      if (!sessionRes.ok) {
+        // 401 = no session – not an error, just unauthenticated.
+        setUser(null);
+        setIsAuthenticated(false);
+        setAuthError(null);
+        setIsLoading(false);
+        return;
+      }
+
+      const { token, sub, email: sessionEmail } = await sessionRes.json() as {
+        token: string;
+        sub: string;
+        email: string;
+      };
+
+      // Step B: attach token for all subsequent API calls.
       apiService.setAccessToken(token);
 
-      // Step B: sync first — creates/updates the Neon row before /me can resolve it.
-      await apiService.post('/api/auth/sync', {
-        auth0Id: auth0User.sub,
-        email: auth0User.email,
-        fullName: auth0User.name,
-        profileImage: auth0User.picture,
-      });
+      // Step C: upsert the Neon row (creates it on first login).
+      await apiService.post('/api/auth/sync', { authId: sub, email: sessionEmail });
 
-      // Step C: load the authoritative DB profile (includes role).
+      // Step D: load the authoritative DB profile (includes role).
       const userData = await apiService.get<User>('/api/me');
 
-      // Step D: only commit state once role is present.
       if (!userData.role) {
         throw new Error('Account profile is missing a role.');
       }
 
       setUser(userData);
+      setIsAuthenticated(true);
       setAuthError(null);
-      setIsLoading(false);
 
-      // F-045: strip sensitive financial fields from product analytics.
-      pendo.identify({
-        visitor: {
-          id: userData.id,
-          email: userData.email,
-          full_name: userData.fullName,
-          username: userData.username,
-          role: userData.role,
-          is_online: userData.isOnline,
-          created_at: userData.createdAt,
-          updated_at: userData.updatedAt,
-        },
-      });
+      // Pendo analytics – guard in case script is not loaded.
+      if (typeof pendo !== 'undefined') {
+        pendo.identify({
+          visitor: {
+            id:         userData.id,
+            email:      userData.email,
+            full_name:  userData.fullName,
+            username:   userData.username,
+            role:       userData.role,
+            is_online:  userData.isOnline,
+            created_at: userData.createdAt,
+            updated_at: userData.updatedAt,
+          },
+        });
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Unable to load your account profile.';
       console.error('[AuthContext] Failed to fetch/sync user profile:', err);
       setUser(null);
+      setIsAuthenticated(false);
       setAuthError(message);
-      // Intentionally do NOT setIsLoading(false) here. Staying in the loading
-      // state prevents the DashboardTrafficController from redirecting to /
-      // while the Auth0/db sync is broken. The error boundary/UI can render
-      // the authError toast instead.
+    } finally {
+      setIsLoading(false);
     }
-  }, [auth0IsAuth, auth0User, getAccessTokenSilently]);
+  }, []);
 
   useEffect(() => {
-    if (!auth0Loading) {
-      void refreshUser();
+    void refreshUser();
+  }, [refreshUser]);
+
+  const login = useCallback(() => {
+    // Redirect to the Stack Auth / Neon Auth hosted sign-in page.
+    const returnTo = encodeURIComponent('/dashboard');
+    const signinUrl =
+      (import.meta.env.VITE_STACK_SIGNIN_URL as string | undefined) ?? '/api/auth/login';
+    window.location.href = `${signinUrl}?returnTo=${returnTo}`;
+  }, []);
+
+  const logout = useCallback(async () => {
+    if (typeof pendo !== 'undefined') {
+      pendo.clearSession();
     }
-  }, [auth0Loading, refreshUser, auth0IsAuth]);
-
-  const login = useCallback(
-    () => loginWithRedirect({ appState: { returnTo: '/dashboard' } }),
-    [loginWithRedirect],
-  );
-
-  const logout = useCallback(() => {
-    pendo.clearSession();
     apiService.setAccessToken(null);
     setUser(null);
+    setIsAuthenticated(false);
     setAuthError(null);
-    auth0Logout({ logoutParams: { returnTo: window.location.origin } });
-  }, [auth0Logout]);
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    } catch {
+      // Best-effort – even if the logout call fails, clear local state.
+    }
+    window.location.href = '/';
+  }, []);
 
-  const dbUser = user;
-  const hasDbRole = !!dbUser?.role;
-
-  // F-065: memoize the context value so consumers don't re-render on every
-  // parent render. The deps are exactly the values that affect downstream UIs.
   const value = useMemo<AuthStateWithError>(
     () => ({
-      user: dbUser,
-      isAuthenticated: auth0IsAuth && hasDbRole,
-      isLoading: auth0Loading || isLoading,
+      user,
+      isAuthenticated,
+      isLoading,
       authError,
       login,
       logout,
       refreshUser,
     }),
-    [dbUser, auth0IsAuth, hasDbRole, auth0Loading, isLoading, authError, login, logout, refreshUser],
+    [user, isAuthenticated, isLoading, authError, login, logout, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
