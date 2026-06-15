@@ -12,11 +12,12 @@ describe('Server Config', () => {
     expect(config.corsOrigin).toBe('http://localhost:3000');
   });
 
-  it('has auth0 configuration', () => {
-    expect(config.auth0).toBeDefined();
-    expect(config.auth0.domain).toBe('test.auth0.com');
-    expect(config.auth0.audience).toBe('https://api.soulseer.test');
-    expect(config.auth0.issuerBaseURL).toBe('https://test.auth0.com');
+  it('has neon auth configuration', () => {
+    expect(config.neonAuth).toBeDefined();
+    expect(config.neonAuth.jwksUrl).toBe(
+      'https://test.neonauth.example/neondb/auth/.well-known/jwks.json',
+    );
+    expect(config.neonAuth.authUrl).toBe('https://test.neonauth.example/neondb/auth');
   });
 
   it('has agora configuration', () => {

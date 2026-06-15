@@ -18,7 +18,7 @@ import { validateBody } from "../middleware/validate";
 import { strictLimiter } from "../middleware/rate-limit";
 import { config } from "../config";
 import { logger } from "../utils/logger";
-import { auth0ManagementService } from "../services/auth0-management";
+import { neonAuthAdminService } from "../services/neon-auth-admin";
 import { cloudinaryService } from "../services/cloudinary-service";
 import { pendoTrack } from "../services/pendo-track";
 
@@ -102,7 +102,7 @@ router.get("/users", async (req, res, next) => {
 });
 
 // ─── POST /api/admin/readers — Create reader account ─────────────────────────
-// Admin provides profile details; server creates the Auth0 user automatically
+// Admin provides profile details; server creates the Neon Auth user automatically
 // (using the Management API), creates a Stripe Connect Express account,
 // inserts the reader into the DB, and returns a one-time generated password
 // plus a Stripe Connect onboarding URL for the admin to hand to the reader.
@@ -123,17 +123,17 @@ router.post("/readers", validateBody(createReaderSchema), async (req, res, next)
     const db = getDb();
     const body = req.body;
 
-    if (!auth0ManagementService.enabled) {
+    if (!neonAuthAdminService.enabled) {
       res.status(503).json({
         error:
-          "Auth0 Management API is not configured. Set AUTH0_MGMT_CLIENT_ID and AUTH0_MGMT_CLIENT_SECRET.",
-        code: "AUTH0_MGMT_DISABLED",
+          "Neon Auth is not configured. Set VITE_NEON_AUTH_URL (or NEON_AUTH_URL).",
+        code: "NEON_AUTH_DISABLED",
       });
       return;
     }
 
-    // Reject duplicates by email up front — Auth0 would also 409 but we want a
-    // clean error before we create any Stripe state.
+    // Reject duplicates by email up front — Neon Auth would also reject, but we
+    // want a clean error before we create any Stripe state.
     const [existingByEmail] = await db
       .select({ id: users.id })
       .from(users)
@@ -143,22 +143,22 @@ router.post("/readers", validateBody(createReaderSchema), async (req, res, next)
       return;
     }
 
-    // 1) Create the Auth0 user (generates a secure initial password).
-    let auth0Result: { auth0Id: string; password: string };
+    // 1) Create the Neon Auth user (generates a secure initial password).
+    let authResult: { auth0Id: string; password: string };
     try {
-      auth0Result = await auth0ManagementService.createUserWithPassword({
+      authResult = await neonAuthAdminService.createUserWithPassword({
         email: body.email,
         fullName: body.fullName,
         username: body.username ?? null,
       });
     } catch (err) {
-      res.status(502).json({ error: (err as Error).message, code: "AUTH0_CREATE_FAILED" });
+      res.status(502).json({ error: (err as Error).message, code: "NEON_AUTH_CREATE_FAILED" });
       return;
     }
 
     // 2) Create a Stripe Connect Express account for payouts. F-005: on failure
-    // we compensate by deleting the Auth0 user we just created so the operator
-    // is not left with a half-provisioned account.
+    // we compensate by deleting the Neon Auth user we just created so the
+    // operator is not left with a half-provisioned account.
     let account: Stripe.Account;
     try {
       account = await stripe.accounts.create({
@@ -168,27 +168,27 @@ router.post("/readers", validateBody(createReaderSchema), async (req, res, next)
           card_payments: { requested: true },
           transfers: { requested: true },
         },
-        metadata: { auth0Id: auth0Result.auth0Id, source: "admin-provisioned" },
+        metadata: { authUserId: authResult.auth0Id, source: "admin-provisioned" },
       });
     } catch (err) {
       logger.error(
-        { err, auth0Id: auth0Result.auth0Id },
-        "Stripe Connect account creation failed; compensating by deleting the Auth0 user",
+        { err, authUserId: authResult.auth0Id },
+        "Stripe Connect account creation failed; compensating by deleting the Neon Auth user",
       );
       try {
-        await auth0ManagementService.deleteUser(auth0Result.auth0Id);
+        await neonAuthAdminService.deleteUser(authResult.auth0Id);
         logger.info(
-          { auth0Id: auth0Result.auth0Id },
-          "Compensating Auth0 user deletion succeeded",
+          { authUserId: authResult.auth0Id },
+          "Compensating Neon Auth user deletion attempted",
         );
       } catch (compensateErr) {
         logger.error(
-          { err: compensateErr, auth0Id: auth0Result.auth0Id },
-          "Compensating Auth0 user deletion FAILED — manual cleanup required",
+          { err: compensateErr, authUserId: authResult.auth0Id },
+          "Compensating Neon Auth user deletion FAILED — manual cleanup required",
         );
       }
       res.status(502).json({
-        error: "Stripe Connect account creation failed. The Auth0 user was removed automatically; please retry.",
+        error: "Stripe Connect account creation failed. Please retry.",
         code: "STRIPE_ACCOUNT_FAILED",
       });
       return;
@@ -198,7 +198,7 @@ router.post("/readers", validateBody(createReaderSchema), async (req, res, next)
     const [reader] = await db
       .insert(users)
       .values({
-        auth0Id: auth0Result.auth0Id,
+        auth0Id: authResult.auth0Id,
         email: body.email,
         fullName: body.fullName,
         username: body.username ?? null,
@@ -223,7 +223,7 @@ router.post("/readers", validateBody(createReaderSchema), async (req, res, next)
 
     logger.info(
       { readerId: reader!.id, email: body.email, adminId: req.user!.id },
-      "Reader created by admin (Auth0 + Stripe Connect provisioned)",
+      "Reader created by admin (Neon Auth + Stripe Connect provisioned)",
     );
 
     pendoTrack("reader_account_created", req.user!.id, "system", {
@@ -243,7 +243,7 @@ router.post("/readers", validateBody(createReaderSchema), async (req, res, next)
       reader,
       credentials: {
         email: body.email,
-        initialPassword: auth0Result.password,
+        initialPassword: authResult.password,
       },
       stripeOnboardingUrl: accountLink.url,
     });
@@ -913,7 +913,7 @@ router.delete("/comments/:id", async (req, res, next) => {
 // ─── POST /api/admin/provision-test-accounts ────────────────────────────────
 // Idempotent QA helper that creates (or repoints) the three known test
 // accounts — admin, reader, client — with caller-supplied passwords. Useful
-// for getting a clean slate after Auth0/DB resets without needing local CLI
+// for getting a clean slate after Neon Auth/DB resets without needing local CLI
 // access. Admin-only (router-level requireRole already enforces this).
 const provisionSchema = z.object({
   adminPassword: z.string().min(8).max(128),
@@ -953,11 +953,11 @@ router.post(
   validateBody(provisionSchema),
   async (req, res, next) => {
     try {
-      if (!auth0ManagementService.enabled) {
+      if (!neonAuthAdminService.enabled) {
         res.status(503).json({
           error:
-            "Auth0 Management API is not configured. Set AUTH0_MGMT_CLIENT_ID and AUTH0_MGMT_CLIENT_SECRET (or AUTH0_APP_ID/AUTH0_CLIENT_SECRET).",
-          code: "AUTH0_MGMT_DISABLED",
+            "Neon Auth is not configured. Set VITE_NEON_AUTH_URL (or NEON_AUTH_URL).",
+          code: "NEON_AUTH_DISABLED",
         });
         return;
       }
@@ -971,7 +971,7 @@ router.post(
 
       const results = await Promise.all(
         TEST_ACCOUNTS.map(async (spec) => {
-          const upsert = await auth0ManagementService.upsertUserWithPassword({
+          const upsert = await neonAuthAdminService.upsertUserWithPassword({
             email: spec.email,
             password: passwordByRole[spec.role]!,
             fullName: spec.fullName,
@@ -1003,7 +1003,7 @@ router.post(
             return {
               email: spec.email,
               role: spec.role,
-              auth0Created: upsert.created,
+              authUserCreated: upsert.created,
               dbAction: "updated" as const,
             };
           } else {
@@ -1014,7 +1014,7 @@ router.post(
             return {
               email: spec.email,
               role: spec.role,
-              auth0Created: upsert.created,
+              authUserCreated: upsert.created,
               dbAction: "inserted" as const,
             };
           }

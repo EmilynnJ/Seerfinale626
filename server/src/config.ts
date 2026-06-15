@@ -1,51 +1,6 @@
 import './load-env';
 import { z } from 'zod';
 
-// Accept Auth0 variable aliases so deployments can use either the canonical
-// AUTH0_DOMAIN/AUTH0_AUDIENCE/AUTH0_MGMT_* names or the names shown in the
-// Auth0 dashboard (AUTH0_DOMAIN_URL, AUTH0_IDENTIFIER, AUTH0_APP_ID,
-// AUTH0_CLIENT_SECRET, AUTH0_ALLOWED_URL).
-function pickAuth0Env() {
-  const env = process.env;
-  // Prefer the canonical server names, but fall back to the VITE_AUTH0_* values
-  // (present in the Vercel runtime too) so the API validates tokens against the
-  // EXACT domain/audience the SPA used to mint them. Without this the server can
-  // end up with an empty domain or an audience that differs from the token's
-  // `aud`, and every request 401s — which surfaces as "login bounces to home".
-  const rawDomain =
-    env.AUTH0_DOMAIN ||
-    env.AUTH0_DOMAIN_URL ||
-    env.AUTH0_ISSUER_BASE_URL ||
-    env.VITE_AUTH0_DOMAIN ||
-    '';
-  const domain = rawDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
-  // The SPA mints tokens with VITE_AUTH0_AUDIENCE, so that is the authoritative
-  // source. AUTH0_IDENTIFIER is a distinct variable and is only a last-resort
-  // alias. Fall back to the Management API audience so prod does not crash while
-  // the API is still being created.
-  const audience =
-    env.AUTH0_AUDIENCE ||
-    env.VITE_AUTH0_AUDIENCE ||
-    env.AUTH0_IDENTIFIER ||
-    (domain ? `https://${domain}/api/v2/` : '');
-  const mgmtClientId = env.AUTH0_MGMT_CLIENT_ID || env.AUTH0_APP_ID || '';
-  const mgmtClientSecret =
-    env.AUTH0_MGMT_CLIENT_SECRET || env.AUTH0_CLIENT_SECRET || '';
-  // If CORS_ORIGIN is unset/localhost in production, fall back to the
-  // configured Auth0 allowed URL so the deployed frontend can call the API.
-  const allowedUrl =
-    (env.AUTH0_ALLOWED_URL || env.AUTH0_BASE_URL || env.VITE_AUTH0_REDIRECT_URI || '').replace(
-      /\/$/,
-      '',
-    );
-  if (allowedUrl && (!env.CORS_ORIGIN || env.CORS_ORIGIN.includes('localhost'))) {
-    env.CORS_ORIGIN = env.CORS_ORIGIN
-      ? `${env.CORS_ORIGIN},${allowedUrl}`
-      : allowedUrl;
-  }
-  return { domain, audience, mgmtClientId, mgmtClientSecret };
-}
-
 // Resolve Neon Auth configuration. Neon Auth issues JWTs that the API verifies
 // against the project's JWKS endpoint. We accept either an explicit
 // NEON_AUTH_JWKS_URL, or derive it from the public auth base URL
@@ -76,12 +31,6 @@ if (!process.env.DATABASE_URL) {
     '';
 }
 
-const auth0Resolved = pickAuth0Env();
-process.env.AUTH0_DOMAIN = auth0Resolved.domain;
-process.env.AUTH0_AUDIENCE = auth0Resolved.audience;
-process.env.AUTH0_MGMT_CLIENT_ID = auth0Resolved.mgmtClientId;
-process.env.AUTH0_MGMT_CLIENT_SECRET = auth0Resolved.mgmtClientSecret;
-
 const neonAuthResolved = pickNeonAuthEnv();
 process.env.NEON_AUTH_JWKS_URL = neonAuthResolved.jwksUrl;
 process.env.NEON_AUTH_URL = neonAuthResolved.authUrl;
@@ -95,14 +44,6 @@ const envSchema = z.object({
   // can authenticate requests minted by Neon Auth.
   NEON_AUTH_JWKS_URL: z.string().min(1),
   NEON_AUTH_URL: z.string().default(''),
-  // Auth0 (legacy): optional. Retained only for the optional Management API
-  // (admin-provisioned accounts) and backwards compatibility. No longer used
-  // for request authentication.
-  AUTH0_DOMAIN: z.string().default(''),
-  AUTH0_AUDIENCE: z.string().default(''),
-  AUTH0_MGMT_CLIENT_ID: z.string().default(''),
-  AUTH0_MGMT_CLIENT_SECRET: z.string().default(''),
-  AUTH0_DB_CONNECTION: z.string().default('Username-Password-Authentication'),
   AGORA_APP_ID: z.string().default(''),
   AGORA_APP_CERTIFICATE: z.string().default(''),
   STRIPE_SECRET_KEY: z.string().default(''),
@@ -168,11 +109,6 @@ export const config = {
     jwksUrl: env.NEON_AUTH_JWKS_URL,
     issuer: neonAuthResolved.issuer,
   },
-  auth0: {
-    domain: env.AUTH0_DOMAIN,
-    audience: env.AUTH0_AUDIENCE,
-    issuerBaseURL: `https://${env.AUTH0_DOMAIN}`,
-  },
   agora: {
     appId: env.AGORA_APP_ID,
     appCertificate: env.AGORA_APP_CERTIFICATE,
@@ -181,12 +117,6 @@ export const config = {
   stripe: {
     secretKey: env.STRIPE_SECRET_KEY,
     webhookSecret: env.STRIPE_WEBHOOK_SECRET,
-  },
-  auth0Management: {
-    clientId: env.AUTH0_MGMT_CLIENT_ID,
-    clientSecret: env.AUTH0_MGMT_CLIENT_SECRET,
-    dbConnection: env.AUTH0_DB_CONNECTION,
-    enabled: Boolean(env.AUTH0_MGMT_CLIENT_ID && env.AUTH0_MGMT_CLIENT_SECRET),
   },
   cloudinary: {
     cloudName: env.CLOUDINARY_CLOUD_NAME,

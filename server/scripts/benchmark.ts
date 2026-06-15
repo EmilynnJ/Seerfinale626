@@ -54,7 +54,7 @@ async function runBenchmark() {
   const results: Array<{
     email: string;
     role: string;
-    auth0Created: boolean;
+    authUserCreated: boolean;
     dbAction: "inserted" | "updated";
   }> = [];
 
@@ -86,7 +86,7 @@ async function runBenchmark() {
         return {
           email: spec.email,
           role: spec.role,
-          auth0Created: upsert.created,
+          authUserCreated: upsert.created,
           dbAction: "updated" as const,
         };
       } else {
@@ -94,7 +94,7 @@ async function runBenchmark() {
         return {
           email: spec.email,
           role: spec.role,
-          auth0Created: upsert.created,
+          authUserCreated: upsert.created,
           dbAction: "inserted" as const,
         };
       }

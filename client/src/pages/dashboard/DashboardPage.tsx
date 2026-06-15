@@ -9,9 +9,9 @@ export function DashboardPage() {
     return <LoadingPage message="Preparing your dashboard..." />;
   }
 
-  // Auth0 session exists but the backend couldn't load the internal user
+  // A Neon Auth session exists but the backend couldn't load the internal user
   // record. Show a recoverable error screen instead of redirecting back to
-  // /login — that would re-trigger Auth0 and cause an infinite loop.
+  // /login — that would re-trigger sign-in and cause an infinite loop.
   if (authError) {
     return (
       <div className="page-enter">
@@ -19,7 +19,7 @@ export function DashboardPage() {
           <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
             <h1 className="heading-2">We couldn't load your profile</h1>
             <p className="login-cosmic__text" style={{ marginBottom: '1rem' }}>
-              You are signed in with Auth0, but the SoulSeer API returned an
+              You are signed in, but the SoulSeer API returned an
               error while syncing your account.
             </p>
             <p className="caption" style={{ marginBottom: '1.5rem' }}>

@@ -5,28 +5,26 @@
  *   - reader : emilynn992@gmail.com
  *   - client : emily81292@gmail.com
  *
- * Creates the Auth0 users (via Management API) with the caller-supplied
- * passwords, and upserts matching rows into the `users` table with the
- * correct role and a starter balance for the client.
+ * Creates the Neon Auth users (via the hosted sign-up endpoint) with the
+ * caller-supplied passwords, and upserts matching rows into the `users` table
+ * with the correct role and a starter balance for the client.
  *
  * Usage:
  *   cd server
- *   AUTH0_MGMT_CLIENT_ID=... AUTH0_MGMT_CLIENT_SECRET=... \
- *   AUTH0_DOMAIN=... AUTH0_AUDIENCE=... DATABASE_URL=... \
+ *   VITE_NEON_AUTH_URL=... NEON_AUTH_JWKS_URL=... DATABASE_URL=... \
  *   ADMIN_PASSWORD=... READER_PASSWORD=... CLIENT_PASSWORD=... \
  *   npx tsx scripts/provision-test-accounts.ts
  *
- * The script is idempotent — re-running it will skip existing Auth0 users
- * (swallowing 409 conflicts) and update the DB row instead of inserting
- * a duplicate.
+ * The script is idempotent on the DB side — re-running updates the existing
+ * row. Note: Neon Auth users that already exist cannot have their password
+ * reset from the server; reset those from the Neon Auth dashboard if needed.
  */
 
 import 'dotenv/config';
 import { eq } from 'drizzle-orm';
-import { ManagementClient } from 'auth0';
 import { db, pool } from '../src/db/db';
 import { users } from '../src/db/schema';
-import { config } from '../src/config';
+import { neonAuthAdminService } from '../src/services/neon-auth-admin';
 
 interface AccountSpec {
   label: 'admin' | 'reader' | 'client';
@@ -78,83 +76,51 @@ function required(name: string): string {
 }
 
 async function main() {
-  if (!config.auth0Management.enabled) {
+  if (!neonAuthAdminService.enabled) {
     console.error(
-      'Auth0 Management is not configured. Set AUTH0_MGMT_CLIENT_ID and AUTH0_MGMT_CLIENT_SECRET.',
+      'Neon Auth is not configured. Set VITE_NEON_AUTH_URL (or NEON_AUTH_URL).',
     );
     process.exit(1);
   }
 
-  const mgmt = new ManagementClient({
-    domain: config.auth0.domain,
-    clientId: config.auth0Management.clientId,
-    clientSecret: config.auth0Management.clientSecret,
-  });
-
   await Promise.all(SPECS.map(async (spec) => {
     console.log(`\n── [${spec.label}] ${spec.email} ─────────────────────────`);
 
-    // 1) Create (or reuse) the Auth0 user.
-    let auth0Id: string | null = null;
+    // 1) Create (or reuse) the Neon Auth user.
+    let neonUserId: string | null = null;
     try {
-      // Not all Auth0 DB connections have `requires_username` enabled; only
-      // include the username field when the connection supports it (the
-      // Management API returns 400 otherwise). Default to omitting it.
-      const includeUsername =
-        process.env.AUTH0_CONNECTION_REQUIRES_USERNAME === 'true';
-      const createBody: Record<string, unknown> = {
-        connection: config.auth0Management.dbConnection,
+      const created = await neonAuthAdminService.upsertUserWithPassword({
         email: spec.email,
         password: spec.password,
-        email_verified: true,
-        verify_email: false,
-        name: spec.fullName,
-        user_metadata: { role: spec.label, source: 'test-provisioning' },
-        app_metadata: { role: spec.label },
-      };
-      if (includeUsername) createBody.username = spec.username;
-      const resp = await mgmt.users.create(
-        createBody as Parameters<typeof mgmt.users.create>[0],
-      );
-      auth0Id = resp.data.user_id ?? null;
-      console.log(`[${spec.label}] Auth0 user created: ${auth0Id}`);
+        fullName: spec.fullName,
+        role: spec.label,
+        username: spec.username,
+      });
+      neonUserId = created.auth0Id;
+      console.log(`[${spec.label}] Neon Auth user created: ${neonUserId}`);
     } catch (err) {
-      const status = (err as { statusCode?: number }).statusCode;
-      if (status === 409) {
-        console.log(`[${spec.label}] Auth0 user already exists — looking up…`);
-        const existing = await mgmt.users.listUsersByEmail({ email: spec.email });
-        // The SDK sometimes returns the array directly, sometimes wrapped
-        // under `.data` depending on version / transport.
-        const rawRows: unknown = Array.isArray(existing)
-          ? existing
-          : (existing as { data?: unknown }).data;
-        const rows = Array.isArray(rawRows)
-          ? (rawRows as Array<{ user_id?: string }>)
-          : [];
-        auth0Id = rows[0]?.user_id ?? null;
-        if (!auth0Id) {
-          console.error(`[${spec.label}] Could not resolve Auth0 user_id for existing account`);
-          return;
-        }
-        console.log(`[${spec.label}] Resolved existing Auth0 user: ${auth0Id}`);
-        // Make sure the password matches what the caller expects.
-        try {
-          await mgmt.users.update(auth0Id, { password: spec.password });
-          console.log(`[${spec.label}] Password updated to the supplied value`);
-        } catch (updateErr) {
-          console.warn(`[${spec.label}] Failed to update password on existing Auth0 user:`, updateErr);
-        }
-      } else {
-        console.error(`[${spec.label}] Auth0 user creation failed:`, err);
+      // Existing Neon Auth users can't be resolved/reset from the server.
+      // Fall back to the DB row (matched by email) so role/pricing still sync.
+      console.warn(`[${spec.label}] Neon Auth sign-up skipped:`, (err as Error).message);
+      const [existingByEmail] = await db
+        .select({ auth0Id: users.auth0Id })
+        .from(users)
+        .where(eq(users.email, spec.email));
+      neonUserId = existingByEmail?.auth0Id ?? null;
+      if (!neonUserId) {
+        console.error(
+          `[${spec.label}] No existing DB row to update; have ${spec.email} sign up via the app first.`,
+        );
         return;
       }
+      console.log(`[${spec.label}] Using existing Neon Auth user id from DB: ${neonUserId}`);
     }
 
-    if (!auth0Id) return;
+    if (!neonUserId) return;
 
     // 2) Upsert internal DB row with correct role/pricing/balance.
     const role = spec.label === 'admin' ? 'admin' : spec.label === 'reader' ? 'reader' : 'client';
-    const [existingDb] = await db.select().from(users).where(eq(users.auth0Id, auth0Id));
+    const [existingDb] = await db.select().from(users).where(eq(users.auth0Id, neonUserId));
 
     const patch = {
       email: spec.email,
@@ -176,7 +142,7 @@ async function main() {
     } else {
       const [inserted] = await db
         .insert(users)
-        .values({ auth0Id, ...patch })
+        .values({ auth0Id: neonUserId, ...patch })
         .returning({ id: users.id });
       console.log(`[${spec.label}] DB row inserted (id=${inserted?.id}, role=${role})`);
     }

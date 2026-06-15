@@ -31,7 +31,7 @@ export function TermsOfServicePage() {
 
               <h2 className="heading-3">2. Accounts and Roles</h2>
               <p className="body-text">
-                Clients may register through Auth0 using social or email
+                Clients may register through Neon Auth using social or email
                 sign-in. Reader accounts are provisioned only by SoulSeer
                 administrators; readers cannot self-register. You are
                 responsible for keeping your credentials confidential and for

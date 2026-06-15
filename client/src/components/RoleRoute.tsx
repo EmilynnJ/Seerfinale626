@@ -1,7 +1,7 @@
 // ============================================================
 // RoleRoute — gates a route to specific user roles.
 //
-// ProtectedRoute only checks that the user is authenticated with Auth0.
+// ProtectedRoute only checks that the user is authenticated with Neon Auth.
 // RoleRoute additionally requires the synced internal user to have one of
 // the allowed roles, so e.g. a client can't open /dashboard/admin. Users
 // with the wrong role are redirected to their OWN dashboard rather than

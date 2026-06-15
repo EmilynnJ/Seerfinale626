@@ -5,7 +5,7 @@ import { getDb } from "../db/db";
 import { users, readings } from "../db/schema";
 import { requireAuth } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
-import { auth0ManagementService } from "../services/auth0-management";
+import { neonAuthAdminService } from "../services/neon-auth-admin";
 import { logger } from "../utils/logger";
 import { pendoTrack } from "../services/pendo-track";
 
@@ -351,7 +351,7 @@ router.patch(
 
 // ─── DELETE /api/me — Delete own account ────────────────────────────────────
 // Soft-deletes the user by setting deletedAt, scrubbing PII, forcing offline,
-// and clearing Stripe/Auth0 references. Historical readings/transactions are
+// and clearing Stripe/Neon Auth references. Historical readings/transactions are
 // retained for compliance and accounting.
 router.delete("/me", requireAuth, async (req, res, next) => {
   try {
@@ -385,25 +385,25 @@ router.delete("/me", requireAuth, async (req, res, next) => {
       return;
     }
 
-    // Try to delete the Auth0 user first (best effort). If it fails we still
+    // Try to delete the Neon Auth user first (best effort). If it fails we still
     // want to scrub local data so the user is effectively logged out.
-    const auth0Id = req.user!.auth0Id;
-    let auth0Deleted = false;
+    const neonUserId = req.user!.auth0Id;
+    let authUserDeleted = false;
     try {
-      auth0Deleted = await auth0ManagementService.deleteUser(auth0Id);
+      authUserDeleted = await neonAuthAdminService.deleteUser(neonUserId);
     } catch (err) {
-      logger.error({ err, userId }, "Auth0 deletion failed during account delete — continuing with local scrub");
+      logger.error({ err, userId }, "Neon Auth deletion failed during account delete — continuing with local scrub");
     }
 
     const now = new Date();
     const scrubbedEmail = `deleted-${userId}-${now.getTime()}@deleted.soulseer.invalid`;
-    const scrubbedAuth0Id = `deleted|${userId}|${now.getTime()}`;
+    const scrubbedNeonUserId = `deleted|${userId}|${now.getTime()}`;
 
     await db
       .update(users)
       .set({
         email: scrubbedEmail,
-        auth0Id: scrubbedAuth0Id,
+        auth0Id: scrubbedNeonUserId,
         username: null,
         fullName: "Deleted User",
         profileImage: null,
@@ -417,7 +417,7 @@ router.delete("/me", requireAuth, async (req, res, next) => {
       })
       .where(eq(users.id, userId));
 
-    logger.info({ userId, auth0Deleted }, "Account deleted");
+    logger.info({ userId, authUserDeleted }, "Account deleted");
 
     const accountAgeDays = Math.floor(
       (now.getTime() - new Date(req.user!.createdAt).getTime()) / (1000 * 60 * 60 * 24),
@@ -425,11 +425,11 @@ router.delete("/me", requireAuth, async (req, res, next) => {
     pendoTrack("account_deleted", userId, "system", {
       userId,
       userRole: req.user!.role,
-      auth0Deleted,
+      authUserDeleted,
       accountAgeDays,
     });
 
-    res.json({ ok: true, auth0Deleted });
+    res.json({ ok: true, authUserDeleted });
   } catch (err) {
     next(err);
   }

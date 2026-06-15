@@ -424,7 +424,7 @@ export function ClientDashboard() {
                 <div>
                   <h3 className="heading-4">Delete Account</h3>
                   <p className="caption">
-                    Permanently remove your SoulSeer account and Auth0 login. Your
+                    Permanently remove your SoulSeer account and sign-in. Your
                     reading history is retained anonymised for accounting. This
                     cannot be undone.
                   </p>
@@ -466,7 +466,7 @@ export function ClientDashboard() {
         >
           <div className="flex flex-col gap-3">
             <p className="body-text">
-              This will permanently delete your SoulSeer account and Auth0 login.
+              This will permanently delete your SoulSeer account and sign-in.
               Your email, name, and profile data will be scrubbed from our
               database. Historical readings and transactions are retained
               anonymised for accounting.

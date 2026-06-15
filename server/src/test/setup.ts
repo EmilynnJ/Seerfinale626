@@ -6,8 +6,6 @@
 // Set test environment variables so config.ts doesn't exit the process
 process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/soulseer_test';
-process.env.AUTH0_DOMAIN = 'test.auth0.com';
-process.env.AUTH0_AUDIENCE = 'https://api.soulseer.test';
 process.env.NEON_AUTH_JWKS_URL =
   'https://test.neonauth.example/neondb/auth/.well-known/jwks.json';
 process.env.NEON_AUTH_URL = 'https://test.neonauth.example/neondb/auth';
