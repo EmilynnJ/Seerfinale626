@@ -1,6 +1,4 @@
-import { BrowserRouter, Routes, Route, useNavigate, Navigate } from 'react-router-dom';
-import { Auth0Provider, type AppState } from '@auth0/auth0-react';
-import { type ReactNode } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { WebSocketProvider } from './contexts/WebSocketContext';
 import { ToastProvider } from './components/ToastProvider';
@@ -21,6 +19,7 @@ import { ReaderDashboard } from './pages/dashboard/ReaderDashboard';
 import { ClientDashboard } from './pages/dashboard/ClientDashboard';
 import { ReadingSessionPage } from './pages/reading/ReadingSessionPage';
 import { MessagesPage } from './pages/messages/MessagesPage';
+import { ProfilePage } from './pages/profile/ProfilePage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { RoleRoute } from './components/RoleRoute';
 import { AboutPage } from './pages/AboutPage';
@@ -31,7 +30,7 @@ import { TermsOfServicePage } from './pages/TermsOfServicePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 /**
- * Central traffic controller for /dashboard — waits for the DB role, then
+ * Central traffic controller for /dashboard – waits for the DB role, then
  * routes to the correct role-specific dashboard. Never falls back to /.
  */
 function DashboardTrafficController() {
@@ -44,12 +43,12 @@ function DashboardTrafficController() {
   if (authError) {
     return (
       <div className="page-enter">
-        <div className="container" style={{ maxWidth: 560, paddingTop: '4rem' }}>
+        <div className="container" style={{ maxWidth: 560, padding: '4rem' }}>
           <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
             <h1 className="heading-2">We couldn't load your profile</h1>
             <p className="login-cosmic__text" style={{ marginBottom: '1rem' }}>
-              You are signed in with Auth0, but the SoulSeer API returned an
-              error while syncing your account.
+              Your session was found, but the SoulSeer API returned an error
+              while syncing your account.
             </p>
             <p className="caption" style={{ marginBottom: '1.5rem' }}>
               {authError}
@@ -58,7 +57,7 @@ function DashboardTrafficController() {
               <Button variant="primary" onClick={() => refreshUser?.()}>
                 Retry
               </Button>
-              <Button variant="ghost" onClick={() => logout()}>
+              <Button variant="host" onClick={() => logout?.()}>
                 Sign out
               </Button>
             </div>
@@ -86,9 +85,6 @@ function DashboardTrafficController() {
 function AppRoutes() {
   return (
     <ErrorBoundary>
-      <a href="#main-content" className="skip-link">
-        Skip to main content
-      </a>
       <CosmicBackground />
       <Navigation />
       <main id="main-content" className="page-wrapper">
@@ -131,6 +127,14 @@ function AppRoutes() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/help" element={<HelpPage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -144,80 +148,16 @@ function AppRoutes() {
   );
 }
 
-/**
- * Auth0 provider that navigates via React Router after the login callback.
- *
- * Must be rendered INSIDE <BrowserRouter> so useNavigate() is available.
- * Previous versions used window.history.replaceState in onRedirectCallback,
- * which did not trigger a React Router re-render — the URL updated but the
- * page stayed on HomePage, making it look like /dashboard didn't exist.
- */
-function Auth0ProviderWithNavigate({ children }: { children: ReactNode }) {
-  const navigate = useNavigate();
-
-  const auth0Domain = (import.meta.env.VITE_AUTH0_DOMAIN || '')
-    .replace(/^https?:\/\//, '')
-    .replace(/\/$/, '');
-  const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID || '';
-  const audience = import.meta.env.VITE_AUTH0_AUDIENCE || '';
-  const redirectUri = (
-    import.meta.env.VITE_AUTH0_REDIRECT_URI ||
-    (typeof window !== 'undefined' ? window.location.origin : '')
-  ).replace(/\/$/, '');
-
-  if (!auth0Domain || !clientId) {
-    console.error(
-      '[SoulSeer] Auth0 env vars missing. Ensure VITE_AUTH0_DOMAIN and VITE_AUTH0_CLIENT_ID are set.',
-    );
-  }
-  if (!audience) {
-    console.warn(
-      '[SoulSeer] VITE_AUTH0_AUDIENCE is not set — backend JWT validation will reject tokens.',
-    );
-  }
-
-  const onRedirectCallback = (appState?: AppState) => {
-    const target = appState?.returnTo || '/dashboard';
-    navigate(target, { replace: true });
-  };
-
-  return (
-    <Auth0Provider
-      domain={auth0Domain}
-      clientId={clientId}
-      authorizationParams={{
-        redirect_uri: redirectUri,
-        audience,
-        scope: 'openid profile email offline_access',
-      }}
-      // Use rotating refresh tokens instead of silent-iframe auth. Modern
-      // browsers (Safari ITP, Chrome third-party-cookie phase-out) block the
-      // hidden-iframe Auth0 session cookie, which makes getAccessTokenSilently()
-      // fail and the app appear "logged in but broken". Refresh tokens stored in
-      // localStorage survive page reloads and do not depend on third-party
-      // cookies. Requires "Allow Offline Access" enabled on the Auth0 API.
-      useRefreshTokens
-      useRefreshTokensFallback
-      cacheLocation="localstorage"
-      onRedirectCallback={onRedirectCallback}
-    >
-      {children}
-    </Auth0Provider>
-  );
-}
-
 export default function App() {
   return (
     <BrowserRouter>
-      <Auth0ProviderWithNavigate>
-        <ToastProvider>
-          <AuthProvider>
-            <WebSocketProvider>
-              <AppRoutes />
-            </WebSocketProvider>
-          </AuthProvider>
-        </ToastProvider>
-      </Auth0ProviderWithNavigate>
+      <ToastProvider>
+        <AuthProvider>
+          <WebSocketProvider>
+            <AppRoutes />
+          </WebSocketProvider>
+        </AuthProvider>
+      </ToastProvider>
     </BrowserRouter>
   );
 }
