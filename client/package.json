@@ -18,7 +18,7 @@
     "lint:fix": "eslint src --ext .ts,.tsx --fix"
   },
   "dependencies": {
-    "@auth0/auth0-react": "^2.2.4",
+    "@neondatabase/neon-js": "^0.6.2-beta",
     "@stripe/react-stripe-js": "^6.2.0",
     "@stripe/stripe-js": "^9.2.0",
     "agora-rtc-sdk-ng": "^4.20.0",

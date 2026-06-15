@@ -33,10 +33,10 @@ function jwtClaims(req: Request): { auth0Id?: string; email?: string } {
 }
 
 /**
- * JWT-only guard: verifies the Auth0 token signature and audience but does
- * NOT resolve the user row in Neon. Used on /sync so that a brand new user
- * can create their Neon row on first login without hitting the
- * chicken-and-egg 401 that resolveUser would return.
+ * JWT-only guard: verifies the Neon Auth token signature but does NOT resolve
+ * the user row in Neon. Used on /sync so that a brand new user can create their
+ * Neon row on first login without hitting the chicken-and-egg 401 that
+ * resolveUser would return.
  *
  * This is intentionally named `requireAuth` here so the route reads as
  * `requireAuth, generalLimiter` per the security spec, while the rest of the
@@ -51,8 +51,9 @@ function sanitizeUser(user: typeof users.$inferSelect) {
   return { ...safe, accountBalance: safe.balance };
 }
 
-// POST /api/auth/sync — Upsert Auth0 user into Neon on first (and subsequent) logins.
-// Uses jwtOnly — NOT requireAuth — so the user row does not need to exist yet.
+// POST /api/auth/sync — Upsert the authenticated (Neon Auth) user into the DB
+// on first (and subsequent) logins. Uses the JWT-only guard — NOT the combined
+// requireAuth — so the user row does not need to exist yet.
 router.post("/sync", requireAuth, generalLimiter, validateBody(callbackSchema), async (req, res, next) => {
   try {
     const db = getDb();
