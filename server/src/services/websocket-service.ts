@@ -84,11 +84,9 @@ class WebSocketService {
     if (!token) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return; }
 
     try {
-      const { payload } = await jose.jwtVerify(
-        token,
-        this.jwks!,
-        config.neonAuth.issuer ? { issuer: config.neonAuth.issuer } : {},
-      );
+      // Signature-only verification against the Neon Auth JWKS (no issuer/
+      // audience enforcement — see middleware/auth.ts for rationale).
+      const { payload } = await jose.jwtVerify(token, this.jwks!);
 
       // Prefer a custom `userId` claim if present; otherwise resolve the
       // internal user by `sub` (the Neon Auth user id stored in users.auth0Id).

@@ -120,6 +120,10 @@ const envSchema = z.object({
     .default('true')
     .transform((v) => v.toLowerCase() !== 'false'),
   ADMIN_EMAILS: z.string().default('emilynnj14@gmail.com'),
+  // Comma-separated emails that are bootstrapped to role=reader on their next
+  // /api/auth/sync. Lets founding reader accounts come up with the right role
+  // without going through admin provisioning.
+  READER_EMAILS: z.string().default('emilynn992@gmail.com'),
   POSTHOG_API_KEY: z.string().default(''),
   POSTHOG_HOST: z.string().default('https://us.i.posthog.com'),
   // F-009: Pendo integration key moved out of source so it can be rotated
@@ -199,7 +203,8 @@ export const config = {
     welcomeEnabled: env.NEWSLETTER_WELCOME_ENABLED,
     enabled: Boolean(env.BREVO_API_KEY),
   },
-  adminEmails: env.ADMIN_EMAILS.split(',').map((e) => e.trim().toLowerCase()),
+  adminEmails: env.ADMIN_EMAILS.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
+  readerEmails: env.READER_EMAILS.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
   posthog: {
     apiKey: env.POSTHOG_API_KEY,
     host: env.POSTHOG_HOST,

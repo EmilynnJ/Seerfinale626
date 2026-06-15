@@ -20,8 +20,11 @@ const callbackSchema = z.object({
   profileImage: z.string().optional(),
 });
 
-function resolveRole(email: string): "admin" | "client" {
-  return config.adminEmails.includes(email.toLowerCase()) ? "admin" : "client";
+function resolveRole(email: string): "admin" | "reader" | "client" {
+  const normalized = email.toLowerCase();
+  if (config.adminEmails.includes(normalized)) return "admin";
+  if (config.readerEmails.includes(normalized)) return "reader";
+  return "client";
 }
 
 function jwtClaims(req: Request): { auth0Id?: string; email?: string } {
@@ -99,10 +102,14 @@ router.post("/sync", requireAuth, generalLimiter, validateBody(callbackSchema), 
 
     let finalUser = upserted;
 
-    if (insertRole === "admin" && finalUser.role !== "admin") {
+    // Bootstrap founding accounts to their configured role on every sync. The
+    // ON CONFLICT upsert above intentionally does not touch `role` (so admins
+    // can't be demoted by a stale client login), so we apply the elevated role
+    // here when an admin/reader email logs in and the stored role differs.
+    if ((insertRole === "admin" || insertRole === "reader") && finalUser.role !== insertRole) {
       const [promoted] = await db
         .update(users)
-        .set({ role: "admin", updatedAt: new Date() })
+        .set({ role: insertRole, updatedAt: new Date() })
         .where(eq(users.id, finalUser.id))
         .returning();
       if (!promoted) {

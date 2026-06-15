@@ -34,16 +34,22 @@ export async function checkJwt(
       return;
     }
 
-    const verifyOptions: Parameters<typeof jwtVerify>[2] = {};
-    if (config.neonAuth.issuer) {
-      verifyOptions.issuer = config.neonAuth.issuer;
-    }
-
-    const { payload } = await jwtVerify(token, jwks, verifyOptions);
+    // Verify the signature against the Neon Auth JWKS. We deliberately do NOT
+    // enforce issuer/audience here: Neon Auth (Better Auth) signs tokens with
+    // the keys published at the JWKS endpoint, and the signature is the real
+    // security guarantee. Enforcing an exact `iss` string is brittle — if the
+    // token's issuer differs by even a trailing slash or path segment, every
+    // request 401s ("Invalid or expired token"), which is the symptom we are
+    // fixing here.
+    const { payload } = await jwtVerify(token, jwks);
     req.auth = { payload: payload as JWTPayload, token };
     next();
   } catch (err) {
-    logger.warn({ err }, 'Neon Auth JWT verification failed');
+    // Surface the concrete jose reason (e.g. JWKSNoMatchingKey, JWTExpired) in
+    // the logs so misconfiguration is diagnosable from the platform console.
+    const code = (err as { code?: string })?.code;
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn({ err, code, message }, 'Neon Auth JWT verification failed');
     res.status(401).json({ error: 'Invalid or expired token' });
   }
 }

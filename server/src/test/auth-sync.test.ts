@@ -40,6 +40,7 @@ vi.mock('../utils/logger', () => ({
 vi.mock('../config', () => ({
   config: {
     adminEmails: ['admin@example.com'],
+    readerEmails: ['reader@example.com'],
   },
 }));
 
