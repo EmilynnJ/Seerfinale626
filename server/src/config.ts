@@ -46,6 +46,26 @@ function pickAuth0Env() {
   return { domain, audience, mgmtClientId, mgmtClientSecret };
 }
 
+// Resolve Neon Auth configuration. Neon Auth issues JWTs that the API verifies
+// against the project's JWKS endpoint. We accept either an explicit
+// NEON_AUTH_JWKS_URL, or derive it from the public auth base URL
+// (VITE_NEON_AUTH_URL / NEON_AUTH_URL). The auth base URL doubles as the JWT
+// `issuer`. Without this the API cannot validate any logged-in request.
+function pickNeonAuthEnv() {
+  const env = process.env;
+  const authUrl = (env.VITE_NEON_AUTH_URL || env.NEON_AUTH_URL || '')
+    .trim()
+    .replace(/\/$/, '');
+  const jwksUrl = (
+    env.NEON_AUTH_JWKS_URL ||
+    (authUrl ? `${authUrl}/.well-known/jwks.json` : '')
+  ).trim();
+  // better-auth uses the auth base URL as the token issuer. Left empty when the
+  // base URL is unknown so signature-only verification still works.
+  const issuer = authUrl || '';
+  return { authUrl, jwksUrl, issuer };
+}
+
 // Database alias: Vercel + Neon integrations often expose the connection string
 // as NEON_DB_CONNECTION_STRING / POSTGRES_URL rather than DATABASE_URL.
 if (!process.env.DATABASE_URL) {
@@ -62,13 +82,24 @@ process.env.AUTH0_AUDIENCE = auth0Resolved.audience;
 process.env.AUTH0_MGMT_CLIENT_ID = auth0Resolved.mgmtClientId;
 process.env.AUTH0_MGMT_CLIENT_SECRET = auth0Resolved.mgmtClientSecret;
 
+const neonAuthResolved = pickNeonAuthEnv();
+process.env.NEON_AUTH_JWKS_URL = neonAuthResolved.jwksUrl;
+process.env.NEON_AUTH_URL = neonAuthResolved.authUrl;
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(5000),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
   DATABASE_URL: z.string().min(1),
-  AUTH0_DOMAIN: z.string().min(1),
-  AUTH0_AUDIENCE: z.string().min(1),
+  // Neon Auth: JWKS endpoint used to verify session JWTs. Required so the API
+  // can authenticate requests minted by Neon Auth.
+  NEON_AUTH_JWKS_URL: z.string().min(1),
+  NEON_AUTH_URL: z.string().default(''),
+  // Auth0 (legacy): optional. Retained only for the optional Management API
+  // (admin-provisioned accounts) and backwards compatibility. No longer used
+  // for request authentication.
+  AUTH0_DOMAIN: z.string().default(''),
+  AUTH0_AUDIENCE: z.string().default(''),
   AUTH0_MGMT_CLIENT_ID: z.string().default(''),
   AUTH0_MGMT_CLIENT_SECRET: z.string().default(''),
   AUTH0_DB_CONNECTION: z.string().default('Username-Password-Authentication'),
@@ -126,6 +157,13 @@ export const config = {
   port: env.PORT,
   corsOrigin: env.CORS_ORIGIN,
   database: { url: env.DATABASE_URL },
+  // Neon Auth — primary authentication provider. The API verifies incoming
+  // session JWTs against `jwksUrl`.
+  neonAuth: {
+    authUrl: neonAuthResolved.authUrl,
+    jwksUrl: env.NEON_AUTH_JWKS_URL,
+    issuer: neonAuthResolved.issuer,
+  },
   auth0: {
     domain: env.AUTH0_DOMAIN,
     audience: env.AUTH0_AUDIENCE,

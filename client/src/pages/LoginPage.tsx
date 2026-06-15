@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Button, Spinner } from '../components/ui';
@@ -8,18 +8,16 @@ import { Button, Spinner } from '../components/ui';
  *
  * Safe login entrypoint.
  *
- *  - If the user is already fully authenticated (Auth0 ok AND internal user
- *    record loaded), redirect straight to /dashboard.
- *  - Otherwise show a manual "Sign in" button instead of auto-calling
- *    loginWithRedirect(). This prevents an infinite redirect loop when the
- *    backend user sync is failing (e.g. API 500s, network issues, Auth0
- *    audience mismatch): the user would otherwise be bounced back to Auth0
- *    forever because isAuthenticated stays false.
+ *  - If the user is already fully authenticated (Neon Auth session AND internal
+ *    user record loaded), redirect straight to /dashboard.
+ *  - Otherwise show a "Sign in" button that takes the user to the Neon Auth UI
+ *    at /auth/sign-in. We never auto-redirect into the auth flow, so a failing
+ *    backend sync can't bounce the user in a loop — they stay here and can
+ *    retry.
  */
 export function LoginPage() {
-  const { isAuthenticated, isLoading, login } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
-  const [clicked, setClicked] = useState(false);
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
@@ -27,8 +25,8 @@ export function LoginPage() {
     }
   }, [isLoading, isAuthenticated, navigate]);
 
-  // Show the auto-connecting spinner while Auth0 is processing a callback.
-  if (isLoading || clicked) {
+  // Show a spinner while Neon Auth resolves the session / the profile syncs.
+  if (isLoading) {
     return (
       <div className="page-enter">
         <div className="container">
@@ -39,9 +37,7 @@ export function LoginPage() {
               Aligning the stars for your journey...
             </p>
             <Spinner size="lg" />
-            <p className="caption">
-              You will be redirected to sign in momentarily.
-            </p>
+            <p className="caption">One moment while we check your session.</p>
           </div>
         </div>
       </div>
@@ -60,23 +56,15 @@ export function LoginPage() {
           <Button
             variant="primary"
             size="lg"
-            onClick={async () => {
-              setClicked(true);
-              try {
-                await login();
-              } catch (err) {
-                // If Auth0 redirect fails (blocked popup, bad config, offline),
-                // drop the spinner so the user can retry instead of being
-                // stuck forever.
-                console.error('[LoginPage] loginWithRedirect failed:', err);
-                setClicked(false);
-              }
-            }}
+            onClick={() => navigate('/auth/sign-in')}
           >
             Sign in
           </Button>
           <p className="caption">
-            New here? The same button creates your account.
+            New here?{' '}
+            <Button variant="ghost" size="sm" onClick={() => navigate('/auth/sign-up')}>
+              Create an account
+            </Button>
           </p>
         </div>
       </div>

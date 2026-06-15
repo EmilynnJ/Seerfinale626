@@ -25,9 +25,7 @@ class WebSocketService {
       noServer: true,
       handleProtocols: (protocols) => Array.from(protocols)[0] || false,
     });
-    this.jwks = jose.createRemoteJWKSet(
-      new URL(`https://${config.auth0.domain}/.well-known/jwks.json`),
-    );
+    this.jwks = jose.createRemoteJWKSet(new URL(config.neonAuth.jwksUrl));
 
     server.on('upgrade', (request, socket, head) => {
       this.handleUpgrade(request, socket, head).catch((err) => {
@@ -86,13 +84,14 @@ class WebSocketService {
     if (!token) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return; }
 
     try {
-      const { payload } = await jose.jwtVerify(token, this.jwks!, {
-        issuer: `https://${config.auth0.domain}/`,
-        audience: config.auth0.audience,
-      });
+      const { payload } = await jose.jwtVerify(
+        token,
+        this.jwks!,
+        config.neonAuth.issuer ? { issuer: config.neonAuth.issuer } : {},
+      );
 
-      // Prefer a custom `userId` claim if configured in Auth0; otherwise resolve
-      // the internal user by `sub` (Auth0 user_id).
+      // Prefer a custom `userId` claim if present; otherwise resolve the
+      // internal user by `sub` (the Neon Auth user id stored in users.auth0Id).
       const rawUserId = (payload as any).userId ?? (payload as any)['https://soulseer.com/userId'];
       let userId = typeof rawUserId === 'number' ? rawUserId : parseInt(String(rawUserId || ''), 10);
       if (!Number.isFinite(userId) || userId <= 0) userId = 0;

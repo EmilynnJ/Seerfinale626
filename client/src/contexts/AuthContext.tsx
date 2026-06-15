@@ -1,5 +1,6 @@
 import { createContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
-import { useAuth0 } from '@auth0/auth0-react';
+import { useNavigate } from 'react-router-dom';
+import { authClient, getJWTToken } from '../lib/auth';
 import { apiService } from '../services/api';
 import type { AuthState, User } from '../types';
 
@@ -9,23 +10,40 @@ export interface AuthStateWithError extends AuthState {
 
 export const AuthContext = createContext<AuthStateWithError | null>(null);
 
+/**
+ * Minimal shape we read from the Neon Auth (Better Auth) session hook. The
+ * client types `useSession` as a `hook | atom` union, so we narrow it to its
+ * callable hook form here.
+ */
+type SessionResult = {
+  data: {
+    user: {
+      id: string;
+      email: string;
+      name?: string | null;
+      image?: string | null;
+    };
+  } | null;
+  isPending: boolean;
+};
+const useNeonSession = authClient.useSession as unknown as () => SessionResult;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const {
-    isAuthenticated: auth0IsAuth,
-    isLoading: auth0Loading,
-    user: auth0User,
-    getAccessTokenSilently,
-    loginWithRedirect,
-    logout: auth0Logout,
-  } = useAuth0();
+  // Neon Auth (Better Auth) session. `isPending` is true until the client has
+  // determined whether a session exists.
+  const { data: session, isPending: sessionLoading } = useNeonSession();
+  const navigate = useNavigate();
 
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
+  const sessionUser = session?.user ?? null;
+
   const refreshUser = useCallback(async () => {
-    // Step A: wait until Auth0 reports authenticated with a profile.
-    if (!auth0IsAuth || !auth0User) {
+    // Step A: no Neon Auth session → signed out. Resolve loading immediately.
+    if (!sessionUser) {
+      apiService.setAccessToken(null);
       setUser(null);
       setAuthError(null);
       setIsLoading(false);
@@ -35,28 +53,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
 
     try {
-      const token = await getAccessTokenSilently();
+      // Step B: mint a JWT for the API and attach it as the Bearer token.
+      const token = await getJWTToken();
+      if (!token) {
+        throw new Error('Could not obtain an authentication token.');
+      }
       apiService.setAccessToken(token);
 
-      // Step B: sync first — creates/updates the Neon row before /me can resolve it.
+      // Step C: sync first — creates/updates the Neon row before /me resolves it.
       await apiService.post('/api/auth/sync', {
-        auth0Id: auth0User.sub,
-        email: auth0User.email,
-        fullName: auth0User.name,
-        profileImage: auth0User.picture,
+        auth0Id: sessionUser.id,
+        email: sessionUser.email,
+        fullName: sessionUser.name,
+        profileImage: sessionUser.image,
       });
 
-      // Step C: load the authoritative DB profile (includes role).
+      // Step D: load the authoritative DB profile (includes role).
       const userData = await apiService.get<User>('/api/me');
 
-      // Step D: only commit state once role is present.
       if (!userData.role) {
         throw new Error('Account profile is missing a role.');
       }
 
       setUser(userData);
       setAuthError(null);
-      setIsLoading(false);
 
       // F-045: strip sensitive financial fields from product analytics.
       pendo.identify({
@@ -75,50 +95,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const message =
         err instanceof Error ? err.message : 'Unable to load your account profile.';
       console.error('[AuthContext] Failed to fetch/sync user profile:', err);
+      apiService.setAccessToken(null);
       setUser(null);
       setAuthError(message);
-      // Intentionally do NOT setIsLoading(false) here. Staying in the loading
-      // state prevents the DashboardTrafficController from redirecting to /
-      // while the Auth0/db sync is broken. The error boundary/UI can render
-      // the authError toast instead.
+    } finally {
+      // Always resolve the loading state — even on error. The previous Auth0
+      // implementation intentionally left isLoading=true on failure, which
+      // deadlocked the app on a spinner whenever the sync call failed. The UI
+      // (DashboardTrafficController / LoginPage) handles the authError state and
+      // offers a Retry instead.
+      setIsLoading(false);
     }
-  }, [auth0IsAuth, auth0User, getAccessTokenSilently]);
+  }, [sessionUser]);
 
   useEffect(() => {
-    if (!auth0Loading) {
+    // Re-run whenever the Neon Auth session finishes loading or changes.
+    if (!sessionLoading) {
       void refreshUser();
     }
-  }, [auth0Loading, refreshUser, auth0IsAuth]);
+  }, [sessionLoading, refreshUser]);
 
-  const login = useCallback(
-    () => loginWithRedirect({ appState: { returnTo: '/dashboard' } }),
-    [loginWithRedirect],
-  );
+  const login = useCallback(async () => {
+    navigate('/auth/sign-in');
+  }, [navigate]);
 
   const logout = useCallback(() => {
     pendo.clearSession();
     apiService.setAccessToken(null);
     setUser(null);
     setAuthError(null);
-    auth0Logout({ logoutParams: { returnTo: window.location.origin } });
-  }, [auth0Logout]);
+    void authClient.signOut().finally(() => {
+      navigate('/', { replace: true });
+    });
+  }, [navigate]);
 
   const dbUser = user;
   const hasDbRole = !!dbUser?.role;
+  const hasSession = !!sessionUser;
 
   // F-065: memoize the context value so consumers don't re-render on every
   // parent render. The deps are exactly the values that affect downstream UIs.
   const value = useMemo<AuthStateWithError>(
     () => ({
       user: dbUser,
-      isAuthenticated: auth0IsAuth && hasDbRole,
-      isLoading: auth0Loading || isLoading,
+      isAuthenticated: hasSession && hasDbRole,
+      isLoading: sessionLoading || isLoading,
       authError,
       login,
       logout,
       refreshUser,
     }),
-    [dbUser, auth0IsAuth, hasDbRole, auth0Loading, isLoading, authError, login, logout, refreshUser],
+    [dbUser, hasSession, hasDbRole, sessionLoading, isLoading, authError, login, logout, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,6 +1,7 @@
-import { BrowserRouter, Routes, Route, useNavigate, Navigate } from 'react-router-dom';
-import { Auth0Provider, type AppState } from '@auth0/auth0-react';
+import { BrowserRouter, Routes, Route, useNavigate, Navigate, Link } from 'react-router-dom';
+import { NeonAuthUIProvider } from '@neondatabase/neon-js/auth/react/ui';
 import { type ReactNode } from 'react';
+import { authClient } from './lib/auth';
 import { AuthProvider } from './contexts/AuthContext';
 import { WebSocketProvider } from './contexts/WebSocketContext';
 import { ToastProvider } from './components/ToastProvider';
@@ -26,6 +27,7 @@ import { RoleRoute } from './components/RoleRoute';
 import { AboutPage } from './pages/AboutPage';
 import { HelpPage } from './pages/HelpPage';
 import { LoginPage } from './pages/LoginPage';
+import { AuthPage } from './pages/AuthPage';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import { TermsOfServicePage } from './pages/TermsOfServicePage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -48,8 +50,8 @@ function DashboardTrafficController() {
           <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
             <h1 className="heading-2">We couldn't load your profile</h1>
             <p className="login-cosmic__text" style={{ marginBottom: '1rem' }}>
-              You are signed in with Auth0, but the SoulSeer API returned an
-              error while syncing your account.
+              You are signed in, but the SoulSeer API returned an error while
+              syncing your account.
             </p>
             <p className="caption" style={{ marginBottom: '1.5rem' }}>
               {authError}
@@ -134,6 +136,9 @@ function AppRoutes() {
           <Route path="/about" element={<AboutPage />} />
           <Route path="/help" element={<HelpPage />} />
           <Route path="/login" element={<LoginPage />} />
+          {/* Neon Auth UI views: sign-in, sign-up, forgot-password, reset-password,
+              magic-link, email-otp, callback, sign-out, etc. */}
+          <Route path="/auth/:pathname" element={<AuthPage />} />
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/terms" element={<TermsOfServicePage />} />
           <Route path="*" element={<NotFoundPage />} />
@@ -145,71 +150,36 @@ function AppRoutes() {
 }
 
 /**
- * Auth0 provider that navigates via React Router after the login callback.
+ * Neon Auth UI provider wired to React Router.
  *
- * Must be rendered INSIDE <BrowserRouter> so useNavigate() is available.
- * Previous versions used window.history.replaceState in onRedirectCallback,
- * which did not trigger a React Router re-render — the URL updated but the
- * page stayed on HomePage, making it look like /dashboard didn't exist.
+ * Must be rendered INSIDE <BrowserRouter> so useNavigate()/<Link> are
+ * available. The Neon Auth UI components (AuthView, SignedIn, RedirectToSignIn,
+ * UserButton, …) use these to navigate between auth views and to redirect after
+ * sign-in. After a successful sign-in the provider redirects to /dashboard,
+ * where the DashboardTrafficController routes to the correct role dashboard.
  */
-function Auth0ProviderWithNavigate({ children }: { children: ReactNode }) {
+function NeonAuthProviderWithNavigate({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
-  const auth0Domain = (import.meta.env.VITE_AUTH0_DOMAIN || '')
-    .replace(/^https?:\/\//, '')
-    .replace(/\/$/, '');
-  const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID || '';
-  const audience = import.meta.env.VITE_AUTH0_AUDIENCE || '';
-  const redirectUri = (
-    import.meta.env.VITE_AUTH0_REDIRECT_URI ||
-    (typeof window !== 'undefined' ? window.location.origin : '')
-  ).replace(/\/$/, '');
-
-  if (!auth0Domain || !clientId) {
-    console.error(
-      '[SoulSeer] Auth0 env vars missing. Ensure VITE_AUTH0_DOMAIN and VITE_AUTH0_CLIENT_ID are set.',
-    );
-  }
-  if (!audience) {
-    console.warn(
-      '[SoulSeer] VITE_AUTH0_AUDIENCE is not set — backend JWT validation will reject tokens.',
-    );
-  }
-
-  const onRedirectCallback = (appState?: AppState) => {
-    const target = appState?.returnTo || '/dashboard';
-    navigate(target, { replace: true });
-  };
-
   return (
-    <Auth0Provider
-      domain={auth0Domain}
-      clientId={clientId}
-      authorizationParams={{
-        redirect_uri: redirectUri,
-        audience,
-        scope: 'openid profile email offline_access',
-      }}
-      // Use rotating refresh tokens instead of silent-iframe auth. Modern
-      // browsers (Safari ITP, Chrome third-party-cookie phase-out) block the
-      // hidden-iframe Auth0 session cookie, which makes getAccessTokenSilently()
-      // fail and the app appear "logged in but broken". Refresh tokens stored in
-      // localStorage survive page reloads and do not depend on third-party
-      // cookies. Requires "Allow Offline Access" enabled on the Auth0 API.
-      useRefreshTokens
-      useRefreshTokensFallback
-      cacheLocation="localstorage"
-      onRedirectCallback={onRedirectCallback}
+    <NeonAuthUIProvider
+      authClient={authClient}
+      navigate={(href: string) => navigate(href)}
+      replace={(href: string) => navigate(href, { replace: true })}
+      Link={({ href, ...props }) => <Link to={href} {...props} />}
+      basePath="/auth"
+      redirectTo="/dashboard"
+      emailOTP
     >
       {children}
-    </Auth0Provider>
+    </NeonAuthUIProvider>
   );
 }
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Auth0ProviderWithNavigate>
+      <NeonAuthProviderWithNavigate>
         <ToastProvider>
           <AuthProvider>
             <WebSocketProvider>
@@ -217,7 +187,7 @@ export default function App() {
             </WebSocketProvider>
           </AuthProvider>
         </ToastProvider>
-      </Auth0ProviderWithNavigate>
+      </NeonAuthProviderWithNavigate>
     </BrowserRouter>
   );
 }

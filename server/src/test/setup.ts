@@ -8,6 +8,9 @@ process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/soulseer_test';
 process.env.AUTH0_DOMAIN = 'test.auth0.com';
 process.env.AUTH0_AUDIENCE = 'https://api.soulseer.test';
+process.env.NEON_AUTH_JWKS_URL =
+  'https://test.neonauth.example/neondb/auth/.well-known/jwks.json';
+process.env.NEON_AUTH_URL = 'https://test.neonauth.example/neondb/auth';
 process.env.AGORA_APP_ID = 'test-agora-app-id';
 process.env.AGORA_APP_CERTIFICATE = 'test-agora-cert';
 process.env.STRIPE_SECRET_KEY = 'STRIPE_SECRET_KEY_TEST_PLACEHOLDER';

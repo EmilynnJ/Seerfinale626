@@ -6,7 +6,7 @@ import {
   useCallback,
   type ReactNode,
 } from 'react';
-import { useAuth0 } from '@auth0/auth0-react';
+import { getJWTToken } from '../lib/auth';
 import { useAuth } from '../hooks/useAuth';
 
 /**
@@ -58,7 +58,6 @@ function resolveWsUrl(): string | null {
 }
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
-  const { getAccessTokenSilently } = useAuth0();
   const { isAuthenticated, user } = useAuth();
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -116,11 +115,16 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     const base = resolveWsUrl();
     if (!base) return;
 
-    let token: string;
+    let token: string | null;
     try {
-      token = await getAccessTokenSilently();
+      token = await getJWTToken();
     } catch (err) {
       console.warn('[ws] could not get access token; will retry later', err);
+      scheduleReconnect();
+      return;
+    }
+    if (!token) {
+      console.warn('[ws] no auth token available; will retry later');
       scheduleReconnect();
       return;
     }
@@ -175,7 +179,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         /* ignore */
       }
     });
-  }, [getAccessTokenSilently, dispatch]);
+  }, [dispatch]);
 
   const scheduleReconnect = useCallback(() => {
     if (!shouldConnectRef.current) return;
