@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, useNavigate, Navigate, Link } from 'react-router-dom';
 import { NeonAuthUIProvider } from '@neondatabase/neon-js/auth/react/ui';
 import { type ReactNode } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { authClient } from './lib/auth';
 import { AuthProvider } from './contexts/AuthContext';
 import { WebSocketProvider } from './contexts/WebSocketContext';
@@ -184,6 +185,7 @@ export default function App() {
           <AuthProvider>
             <WebSocketProvider>
               <AppRoutes />
+              <Analytics />
             </WebSocketProvider>
           </AuthProvider>
         </ToastProvider>
