@@ -248,9 +248,22 @@ class BillingService {
           and(eq(readings.status, "paused"), lt(readings.updatedAt, graceCutoff)),
         );
 
-      for (const r of [...staleActive, ...stalePaused]) {
-        await this.endReading(r.id, "missed", "grace_period_expired");
-        logger.warn({ readingId: r.id }, "Reading ended (grace period expired)");
+      const allStale = [...staleActive, ...stalePaused];
+
+      // Process in batches to avoid connection pool exhaustion
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < allStale.length; i += BATCH_SIZE) {
+        const batch = allStale.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          batch.map(async (r) => {
+            try {
+              await this.endReading(r.id, "missed", "grace_period_expired");
+              logger.warn({ readingId: r.id }, "Reading ended (grace period expired)");
+            } catch (err) {
+              logger.error({ err, readingId: r.id }, "Failed to end stale reading");
+            }
+          })
+        );
       }
     } catch (err) {
       logger.error({ err }, "Billing stale-sweep error");
