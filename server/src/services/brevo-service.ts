@@ -92,6 +92,93 @@ class BrevoService {
    * Send the SoulSeer newsletter welcome email. Safe to call even when
    * Brevo is disabled — it will no-op.
    */
+
+  /**
+   * Send a confirmation email to the applicant.
+   */
+  async sendApplicationConfirmation(email: string, name: string): Promise<BrevoSendResult> {
+    if (!config.brevo.enabled) {
+      return { sent: false, reason: 'disabled' };
+    }
+
+    const subject = 'Application Received - SoulSeer';
+    const htmlContent = `<!DOCTYPE html>
+<html>
+  <body style="font-family: Georgia, 'Playfair Display', serif; background:#0A0A0F; color:#FFFFFF; padding:32px;">
+    <div style="max-width:560px; margin:0 auto; background:#13111A; border:1px solid #D4AF37; border-radius:12px; padding:32px;">
+      <h1 style="font-family: 'Alex Brush', cursive; color:#FF69B4; font-size:42px; margin:0 0 16px; text-align:center;">SoulSeer</h1>
+      <p style="font-size:18px; line-height:1.6; margin:0 0 16px;">Hi ${name},</p>
+      <p style="font-size:16px; line-height:1.6; margin:0 0 16px;">
+        Thank you for applying to be a reader on SoulSeer. We have received your application.
+      </p>
+      <p style="font-size:16px; line-height:1.6; margin:0 0 24px;">
+        Our team will review your application and reach out within 3-5 business days.
+      </p>
+      <p style="font-size:16px; line-height:1.6; margin:0 0 24px;">
+        Warmly,<br>The SoulSeer Team
+      </p>
+    </div>
+  </body>
+</html>`;
+    const textContent = `Hi ${name},\n\nThank you for applying to be a reader on SoulSeer. We have received your application.\n\nOur team will review your application and reach out within 3-5 business days.\n\nWarmly,\nThe SoulSeer Team`;
+
+    return this.send({
+      to: { email, name },
+      subject,
+      htmlContent,
+      textContent,
+      tags: ['application', 'confirmation'],
+    });
+  }
+
+  /**
+   * Send a notification email to admins about a new application.
+   */
+  async sendApplicationAdminNotification(applicationData: {
+    fullName: string;
+    email: string;
+    yearsExperience: string;
+    specialties: string;
+    readingTypes: string[];
+  }): Promise<BrevoSendResult[]> {
+    if (!config.brevo.enabled || config.adminEmails.length === 0) {
+      return [];
+    }
+
+    const subject = `New Reader Application: ${applicationData.fullName}`;
+
+    // Simple HTML summary for admin
+    const htmlContent = `<!DOCTYPE html>
+<html>
+  <body>
+    <h2>New Reader Application</h2>
+    <p><strong>Name:</strong> ${applicationData.fullName}</p>
+    <p><strong>Email:</strong> ${applicationData.email}</p>
+    <p><strong>Experience:</strong> ${applicationData.yearsExperience}</p>
+    <p><strong>Specialties:</strong> ${applicationData.specialties}</p>
+    <p><strong>Reading Types:</strong> ${applicationData.readingTypes.join(', ')}</p>
+    <p>Please review the full application in the admin dashboard.</p>
+  </body>
+</html>`;
+
+    const textContent = `New Reader Application\n\nName: ${applicationData.fullName}\nEmail: ${applicationData.email}\nExperience: ${applicationData.yearsExperience}\nSpecialties: ${applicationData.specialties}\nReading Types: ${applicationData.readingTypes.join(', ')}\n\nPlease review the full application in the admin dashboard.`;
+
+    // Send to all admins
+    const results = await Promise.all(
+      config.adminEmails.map(adminEmail =>
+        this.send({
+          to: { email: adminEmail },
+          subject,
+          htmlContent,
+          textContent,
+          tags: ['application', 'admin_notification'],
+        })
+      )
+    );
+
+    return results;
+  }
+
   async sendNewsletterWelcome(email: string): Promise<BrevoSendResult> {
     if (!config.brevo.welcomeEnabled) {
       return { sent: false, reason: 'welcome_disabled' };

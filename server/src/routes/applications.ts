@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { validateBody } from "../middleware/validate";
 import { logger } from "../utils/logger";
+import { brevoService } from "../services/brevo-service";
 
 const router = Router();
 
@@ -36,8 +37,13 @@ router.post("/", validateBody(applicationSchema), async (req, res, next) => {
       "New reader application received"
     );
 
-    // TODO: When an email service (SendGrid, Resend, etc.) is configured,
-    // send notification to admin and confirmation to applicant here.
+    // Send emails in the background
+    void brevoService.sendApplicationConfirmation(data.email, data.fullName).catch(err => {
+      logger.error({ err, email: data.email }, "Failed to send application confirmation email");
+    });
+    void brevoService.sendApplicationAdminNotification(data).catch(err => {
+      logger.error({ err, applicant: data.fullName }, "Failed to send admin notification for application");
+    });
 
     res.status(201).json({
       message:
