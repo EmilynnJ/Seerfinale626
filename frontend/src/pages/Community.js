@@ -99,11 +99,12 @@ export default function Community() {
     <div className="max-w-3xl mx-auto px-4 py-10">
       <h1 className="font-script text-6xl text-mystic text-center mb-8">Community Hub</h1>
       <div className="flex justify-end mb-6">
-        {profile && (
-          <button data-testid="new-post-btn" className="btn-pink" onClick={() => setShowNew(!showNew)}>
-            {showNew ? "Cancel" : "New Post"}
-          </button>
-        )}
+        <button data-testid="new-post-btn" className="btn-pink" onClick={() => {
+          if (!profile) { setMsg("Please log in to post."); return; }
+          setShowNew(!showNew);
+        }}>
+          {showNew ? "Cancel" : "New Post"}
+        </button>
       </div>
       {showNew && (
         <form onSubmit={createPost} className="card p-6 mb-8 space-y-3">

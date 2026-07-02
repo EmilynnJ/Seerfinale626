@@ -1,11 +1,17 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { api } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 
 export default function Login() {
   const nav = useNavigate();
+  const { profile } = useAuth();
   const [mode, setMode] = useState("login");
+
+  useEffect(() => {
+    if (profile) nav("/dashboard");
+  }, [profile, nav]);
   const [form, setForm] = useState({ email: "", password: "", full_name: "", username: "" });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -17,6 +23,8 @@ export default function Login() {
     setErr("");
     setBusy(true);
     try {
+      const { data: existing } = await supabase.auth.getSession();
+      if (existing?.session) await supabase.auth.signOut();
       if (mode === "signup") {
         await api.post("/auth/register", form);
       }
