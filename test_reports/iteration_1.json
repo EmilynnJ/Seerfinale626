@@ -1,0 +1,32 @@
+{
+  "summary": "Completed full backend regression (30/30 pytest passing) covering health, auth, reader/client dashboards, payments (Stripe checkout URL creation only — no card entry), admin CRUD, forum + moderation, reading request 402/403 security, and expected Cloudflare 502. Frontend UI verified for home, /readers, /login, client dashboard (Add Funds → real Stripe redirect), reader dashboard (online toggle + rate save both persist), admin dashboard (all 5 tabs, user search, adjust button). Reader earnings correctly show 60% split ($2.38 on $3.98 completed reading). Luna+Orion both still online after tests.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Login page (Login.js)", "issue": "When navigating to /login while an existing Supabase session is present in localStorage (e.g., after Stripe checkout redirect back or switching accounts without explicit logout), the submit button locks on 'Please wait…' indefinitely and the second sign-in never resolves. Users must manually clear storage / hit Log Out first. Recommend: on /login mount, either auto-redirect if session exists OR call supabase.auth.signOut() before signInWithPassword when a session is already active.", "selector": "[data-testid='auth-submit']", "priority": "MEDIUM"},
+      {"component": "Community page (Community.js)", "issue": "data-testid 'new-post-btn' not found on /community when logged in as admin. Forum post creation works via API; UI element may be missing testid or gated by role. Verify the button is present and has data-testid='new-post-btn' per spec.", "selector": "[data-testid='new-post-btn']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Fix login page stuck-at-'Please wait...' when a Supabase session already exists — call signOut() before signInWithPassword or redirect logged-in users away from /login.",
+    "Verify data-testid='new-post-btn' exists on /community page for authenticated users."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 863 lines; consider splitting into routers (auth, readers, readings, payments, admin, forum) for maintainability (>700 line threshold).",
+    "POST /api/admin/readers uses multipart Form fields while every other admin endpoint uses JSON — inconsistent API contract; consider standardizing (image can still be optional multipart with the rest as JSON body via a separate endpoint or accepting JSON+base64 image).",
+    "Stripe LIVE keys are configured in preview environment — recommend switching to test keys for non-production environments to avoid accidental live charges.",
+    "Cloudflare Realtime App ID/token invalid — voice/video 502 as expected; needs valid CF credentials before launch.",
+    "clean() helper appears to strip _id / normalize rows; verify no ObjectId leakage on any admin endpoint (looks OK from tests)."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (30/30)", "frontend": "~90% (core dashboards + payments verified; minor login re-auth UX bug)"},
+  "test_credentials": "Used /app/memory/test_credentials.md — Admin/Reader/Client all valid.",
+  "seed_data_creation": "Tests self-create disposable clients via /api/auth/register (@example.com), one test reader via /api/admin/readers, and TEST_ prefixed forum posts (auto-deleted). Balance adjustments are reverted in same test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest suite at /app/backend/tests/backend_test.py — 30 tests all passing. Luna's username is 'lunastarweaver' (not 'luna'); Orion is 'orionsage'. /admin/readers uses multipart form. BalanceAdjustReq requires user_id (uuid), amount (int cents), note (>=3 chars). ReadingReq uses field name 'type' (not 'mode'). PricingReq uses pricing_chat/pricing_voice/pricing_video (not chat_rate_cents). /admin/readings returns {readings: [], commission_pct: 60}. /api/auth/register requires username field and rejects .test TLD (use @example.com). Stripe LIVE — never complete payment; verify URL starts with https://checkout.stripe.com. CF 502 on /rtc/{id}/session is expected.",
+  "rca of the issue": "Login stuck-at-Please-wait: Login.js likely calls supabase.auth.signInWithPassword() without first signing out an existing session. When Supabase already has a valid access token, the second sign-in call may hang because AuthContext state doesn't refresh, leaving the button in loading state. Fix: on Login page mount, if session exists, either redirect to /dashboard or call await supabase.auth.signOut() before submitting new credentials."
+}
