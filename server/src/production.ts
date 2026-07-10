@@ -9,6 +9,7 @@ import cors from 'cors';
 
 // Import server config and routes
 import { config } from './config';
+import { logger } from './utils/logger';
 import { generalLimiter } from './middleware/rate-limit';
 import { globalErrorHandler } from './middleware/error-handler';
 import authRoutes from './routes/auth';
@@ -89,9 +90,9 @@ app.use(globalErrorHandler);
 // Start server
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`🚀 SoulSeer server running on port ${PORT}`);
-  console.log(`Environment: ${config.nodeEnv}`);
-  console.log(`Health check: http://localhost:${PORT}/api/health`);
+  logger.info(`🚀 SoulSeer server running on port ${PORT}`);
+  logger.info(`Environment: ${config.nodeEnv}`);
+  logger.info(`Health check: http://localhost:${PORT}/api/health`);
 });
 
 export default app;
