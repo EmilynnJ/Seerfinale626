@@ -6,7 +6,7 @@ import {
   useCallback,
   type ReactNode,
 } from 'react';
-import { useAuth0 } from '@auth0/auth0-react';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 
 /**
@@ -58,7 +58,6 @@ function resolveWsUrl(): string | null {
 }
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
-  const { getAccessTokenSilently } = useAuth0();
   const { isAuthenticated, user } = useAuth();
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -118,7 +117,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
     let token: string;
     try {
-      token = await getAccessTokenSilently();
+      const { data } = await supabase.auth.getSession();
+      const accessToken = data.session?.access_token;
+      if (!accessToken) throw new Error('No active Supabase session');
+      token = accessToken;
     } catch (err) {
       console.warn('[ws] could not get access token; will retry later', err);
       scheduleReconnect();
@@ -175,7 +177,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         /* ignore */
       }
     });
-  }, [getAccessTokenSilently, dispatch]);
+  }, [dispatch]);
 
   const scheduleReconnect = useCallback(() => {
     if (!shouldConnectRef.current) return;

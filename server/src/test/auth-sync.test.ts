@@ -14,7 +14,7 @@ vi.mock('../middleware/auth', () => ({
       header: {},
       token: 'mock-token',
       payload: {
-        sub: 'auth0|new-user-123',
+        sub: '00000000-0000-4000-8000-000000000123',
         email: 'newuser@example.com',
       },
     } as any;
@@ -62,12 +62,12 @@ describe('POST /api/auth/sync', () => {
     });
   });
 
-  it('upserts via jwtOnly without calling requireAuth/resolveUser', async () => {
+  it('upserts via checkJwt without calling requireAuth/resolveUser', async () => {
     const now = new Date();
     mockUpsertReturning.mockResolvedValue([
       {
         id: 42,
-        auth0Id: 'auth0|new-user-123',
+        supabaseId: '00000000-0000-4000-8000-000000000123',
         email: 'newuser@example.com',
         fullName: 'New User',
         profileImage: null,
@@ -101,7 +101,7 @@ describe('POST /api/auth/sync', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' },
       body: JSON.stringify({
-        auth0Id: 'auth0|new-user-123',
+        supabaseId: '00000000-0000-4000-8000-000000000123',
         email: 'newuser@example.com',
         fullName: 'New User',
       }),
@@ -122,7 +122,7 @@ describe('POST /api/auth/sync', () => {
     mockUpsertReturning.mockResolvedValue([
       {
         id: 43,
-        auth0Id: 'auth0|new-user-123',
+        supabaseId: '00000000-0000-4000-8000-000000000123',
         email: 'newuser@example.com',
         fullName: null,
         profileImage: 'not-a-valid-url',
@@ -156,7 +156,7 @@ describe('POST /api/auth/sync', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        auth0Id: 'auth0|new-user-123',
+        supabaseId: '00000000-0000-4000-8000-000000000123',
         email: 'newuser@example.com',
         profileImage: 'not-a-valid-url',
       }),

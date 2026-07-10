@@ -31,7 +31,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function mockUpsertUserWithPassword() {
   await sleep(100);
-  return { auth0Id: "auth0|123", created: true };
+  return { supabaseId: "00000000-0000-0000-0000-000000000123", created: true };
 }
 
 async function mockDbExisting() {
@@ -54,7 +54,7 @@ async function runBenchmark() {
   const results: Array<{
     email: string;
     role: string;
-    auth0Created: boolean;
+    authCreated: boolean;
     dbAction: "inserted" | "updated";
   }> = [];
 
@@ -86,7 +86,7 @@ async function runBenchmark() {
         return {
           email: spec.email,
           role: spec.role,
-          auth0Created: upsert.created,
+          authCreated: upsert.created,
           dbAction: "updated" as const,
         };
       } else {
@@ -94,7 +94,7 @@ async function runBenchmark() {
         return {
           email: spec.email,
           role: spec.role,
-          auth0Created: upsert.created,
+          authCreated: upsert.created,
           dbAction: "inserted" as const,
         };
       }

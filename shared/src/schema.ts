@@ -58,7 +58,9 @@ export const users = pgTable(
   "users",
   {
     id: serial("id").primaryKey(),
-    auth0Id: varchar("auth0_id", { length: 255 }).notNull(),
+    // Supabase Auth user id (auth.users.id UUID). Links the internal user row
+    // to Supabase Auth; role NEVER lives in Supabase metadata — only here.
+    supabaseId: varchar("supabase_id", { length: 255 }).notNull(),
     email: varchar("email", { length: 255 }).notNull(),
     username: varchar("username", { length: 100 }),
     fullName: varchar("full_name", { length: 255 }),
@@ -101,7 +103,7 @@ export const users = pgTable(
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => ({
-    auth0IdIdx: uniqueIndex("users_auth0_id_idx").on(table.auth0Id),
+    supabaseIdIdx: uniqueIndex("users_supabase_id_idx").on(table.supabaseId),
     emailIdx: uniqueIndex("users_email_idx").on(table.email),
     roleIdx: index("users_role_idx").on(table.role),
     isOnlineIdx: index("users_is_online_idx").on(table.isOnline),
@@ -138,8 +140,14 @@ export const readings = pgTable(
     readerEarned: integer("reader_earned").notNull().default(0),
     platformEarned: integer("platform_earned").notNull().default(0),
 
-    // Agora
-    agoraChannel: varchar("agora_channel", { length: 255 }),
+    // Cloudflare Realtime channel/session identifier (reading_[readingId])
+    rtcChannel: varchar("rtc_channel", { length: 255 }),
+
+    // Cloudflare Realtime signaling state: each participant announces their
+    // SFU session id + published track names here so the other side can pull
+    // them. Shape: { client?: {...}, reader?: {...} }. Kept in the DB (not in
+    // process memory) so it survives stateless/serverless deployments.
+    rtcState: jsonb("rtc_state"),
 
     // Payment
     paymentStatus: paymentStatusEnum("payment_status").notNull().default("pending"),

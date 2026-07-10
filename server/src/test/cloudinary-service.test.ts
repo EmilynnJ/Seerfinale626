@@ -65,12 +65,12 @@ describe('CloudinaryService', () => {
     const mockStream = { end: vi.fn() };
 
     // Setup upload_stream to immediately call its callback with success
-    vi.mocked(cloudinary.uploader.upload_stream).mockImplementation((opts, callback) => {
+    vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(((opts: unknown, callback?: (err?: unknown, result?: unknown) => void) => {
       if (callback) {
         callback(undefined, { secure_url: 'https://test-url.com/img.jpg', public_id: 'test-public-id' } as any);
       }
       return mockStream as any;
-    });
+    }) as any);
 
     const buffer = Buffer.from('test-image-data');
     const result = await svc.uploadBuffer(buffer, { folder: 'test/folder', publicId: 'custom-id' });
@@ -85,7 +85,7 @@ describe('CloudinaryService', () => {
     expect(cloudinary.uploader.upload_stream).toHaveBeenCalledTimes(1);
     expect(mockStream.end).toHaveBeenCalledWith(buffer);
 
-    const [optsArg] = vi.mocked(cloudinary.uploader.upload_stream).mock.calls[0];
+    const [optsArg] = vi.mocked(cloudinary.uploader.upload_stream).mock.calls[0] as unknown as [Record<string, unknown>];
     expect(optsArg).toMatchObject({
       folder: 'test/folder',
       public_id: 'custom-id',
@@ -102,12 +102,12 @@ describe('CloudinaryService', () => {
 
     const mockStream = { end: vi.fn() };
 
-    vi.mocked(cloudinary.uploader.upload_stream).mockImplementation((opts, callback) => {
+    vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(((opts: unknown, callback?: (err?: unknown, result?: unknown) => void) => {
       if (callback) {
         callback(new Error('Upload failed'), undefined);
       }
       return mockStream as any;
-    });
+    }) as any);
 
     await expect(svc.uploadBuffer(Buffer.from('test'))).rejects.toThrow('Upload failed');
   });
@@ -121,12 +121,12 @@ describe('CloudinaryService', () => {
 
     const mockStream = { end: vi.fn() };
 
-    vi.mocked(cloudinary.uploader.upload_stream).mockImplementation((opts, callback) => {
+    vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(((opts: unknown, callback?: (err?: unknown, result?: unknown) => void) => {
       if (callback) {
         callback(undefined, undefined);
       }
       return mockStream as any;
-    });
+    }) as any);
 
     await expect(svc.uploadBuffer(Buffer.from('test'))).rejects.toThrow('Cloudinary returned no result');
   });

@@ -74,8 +74,8 @@ export function PrivacyPolicyPage() {
               <h2 className="heading-3">4. Sharing Your Information</h2>
               <p className="body-text">
                 We share information only with service providers required to run
-                the platform: Auth0 for authentication, Stripe for payments and
-                payouts, Agora for real-time voice/video, Cloudinary for image
+                the platform: Supabase for authentication and data, Stripe for payments and
+                payouts, Cloudflare Realtime for real-time voice/video, Cloudinary for image
                 storage, and a transactional email provider for account emails.
                 We do not sell your personal data.
               </p>

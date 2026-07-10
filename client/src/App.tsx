@@ -19,7 +19,6 @@ import { ReaderDashboard } from './pages/dashboard/ReaderDashboard';
 import { ClientDashboard } from './pages/dashboard/ClientDashboard';
 import { ReadingSessionPage } from './pages/reading/ReadingSessionPage';
 import { MessagesPage } from './pages/messages/MessagesPage';
-import { ProfilePage } from './pages/profile/ProfilePage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { RoleRoute } from './components/RoleRoute';
 import { AboutPage } from './pages/AboutPage';
@@ -57,7 +56,7 @@ function DashboardTrafficController() {
               <Button variant="primary" onClick={() => refreshUser?.()}>
                 Retry
               </Button>
-              <Button variant="host" onClick={() => logout?.()}>
+              <Button variant="ghost" onClick={() => logout?.()}>
                 Sign out
               </Button>
             </div>
@@ -124,14 +123,6 @@ function AppRoutes() {
             element={
               <ProtectedRoute>
                 <MessagesPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/profile"
-            element={
-              <ProtectedRoute>
-                <ProfilePage />
               </ProtectedRoute>
             }
           />

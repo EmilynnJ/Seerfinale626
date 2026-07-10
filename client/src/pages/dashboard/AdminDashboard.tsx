@@ -129,7 +129,7 @@ export function AdminDashboard() {
     try {
       const res = await apiService.post<{
         ok: true;
-        accounts: Array<{ email: string; role: string; auth0Created: boolean; dbAction: string }>;
+        accounts: Array<{ email: string; role: string; authCreated: boolean; dbAction: string }>;
       }>('/api/admin/provision-test-accounts', provisionForm);
       addToast(
         'success',
@@ -1103,7 +1103,7 @@ export function AdminDashboard() {
         >
           <div className="flex flex-col gap-4">
             <p className="caption">
-              Creates or updates the three QA accounts in Auth0 + DB:
+              Creates or updates the three QA accounts in Supabase Auth + DB:
               <br />
               admin <code>emilynnj14@gmail.com</code>, reader{' '}
               <code>emilynn992@gmail.com</code>, client{' '}

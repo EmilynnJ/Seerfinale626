@@ -13,7 +13,7 @@ import {
   EmptyState,
 } from '../../components/ui';
 import type { Reading } from '../../types';
-import type { IMicrophoneAudioTrack, ICameraVideoTrack } from 'agora-rtc-sdk-ng';
+import { ReadingRtcClient, type AnnouncedPeer } from '../../services/realtime';
 
 /* ================================================================
    TYPES
@@ -244,14 +244,16 @@ function VoiceMode({
 function VideoMode({
   localVideoRef,
   remoteVideoRef,
+  hasRemoteStream,
   isMuted,
   isCameraOff,
   onToggleMute,
   onToggleCamera,
   onEnd,
 }: {
-  localVideoRef: React.RefObject<HTMLDivElement>;
-  remoteVideoRef: React.RefObject<HTMLDivElement>;
+  localVideoRef: React.RefObject<HTMLVideoElement>;
+  remoteVideoRef: React.RefObject<HTMLVideoElement>;
+  hasRemoteStream: boolean;
   isMuted: boolean;
   isCameraOff: boolean;
   onToggleMute: () => void;
@@ -261,20 +263,35 @@ function VideoMode({
   return (
     <div className="flex flex-col gap-4">
       <div className="call-area">
-        <div className="call-video" ref={remoteVideoRef}>
-          <div className="call-video__placeholder">
-            <span className="call-video__placeholder-icon">🔮</span>
-            <span>Waiting for reader...</span>
-          </div>
+        <div className="call-video">
+          {!hasRemoteStream && (
+            <div className="call-video__placeholder">
+              <span className="call-video__placeholder-icon">🔮</span>
+              <span>Waiting for the other participant...</span>
+            </div>
+          )}
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: hasRemoteStream ? 'block' : 'none' }}
+          />
           <span className="call-video__label">Reader</span>
         </div>
-        <div className="call-video" ref={localVideoRef}>
+        <div className="call-video">
           {isCameraOff && (
             <div className="call-video__placeholder">
               <span className="call-video__placeholder-icon">📷</span>
               <span>Camera off</span>
             </div>
           )}
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: isCameraOff ? 'none' : 'block' }}
+          />
           <span className="call-video__label">You</span>
         </div>
       </div>
@@ -431,10 +448,11 @@ export function ReadingSessionPage() {
   // ── Voice/Video controls ──
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
-  const localVideoRef = useRef<HTMLDivElement>(null);
-  const remoteVideoRef = useRef<HTMLDivElement>(null);
-  const localAudioTrackRef = useRef<IMicrophoneAudioTrack | null>(null);
-  const localVideoTrackRef = useRef<ICameraVideoTrack | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
+  const rtcClientRef = useRef<ReadingRtcClient | null>(null);
 
   // ── End Session ──
   const [showEndConfirm, setShowEndConfirm] = useState(false);
@@ -447,6 +465,21 @@ export function ReadingSessionPage() {
       try {
         const data = await apiService.get<Reading>(`/api/readings/${id}`);
         setReading(data);
+
+        // Seed chat history from the stored transcript so both parties see
+        // the full conversation after a reload/reconnect.
+        if (data.type === 'chat' && Array.isArray(data.chatTranscript)) {
+          setMessages(
+            (data.chatTranscript as Array<{ senderId: number; content: string; timestamp: number }>).map(
+              (m, i) => ({
+                id: `transcript-${i}-${m.timestamp}`,
+                senderId: m.senderId,
+                content: m.content,
+                timestamp: m.timestamp,
+              }),
+            ),
+          );
+        }
 
         // If already completed, show summary
         if (data.status === 'completed') {
@@ -465,127 +498,95 @@ export function ReadingSessionPage() {
     loadReading();
   }, [id]);
 
-  /* ── Initialize Agora connection ── */
+  /* ── Initialize the real-time connection (Cloudflare Realtime) ── */
   useEffect(() => {
-    if (!reading || reading.status === 'completed' || !reading.agoraChannel) return;
+    if (!reading || reading.status === 'completed') return;
 
     let mounted = true;
 
-    async function initAgora() {
+    if (reading.type === 'chat') {
+      // Chat rides the authenticated API + WebSocket push: messages are sent
+      // via POST /message (which appends to the server-side transcript) and
+      // received via the `reading:message` WS event handled below.
+      setConnectionState('connected');
+      return () => {
+        mounted = false;
+      };
+    }
+
+    // Voice/video: WebRTC through the Cloudflare Realtime SFU, proxied by the
+    // participant-gated server endpoints (short-lived ICE, no CF secrets here).
+    const rtc = new ReadingRtcClient(reading.id, reading.type === 'video', {
+      onRemoteStream: (stream) => {
+        if (mounted) setRemoteStream(stream);
+      },
+      onConnectionStateChange: (state) => {
+        if (!mounted) return;
+        if (state === 'connected') setConnectionState('connected');
+        else if (state === 'connecting') setConnectionState('connecting');
+        else if (state === 'disconnected') setConnectionState('reconnecting');
+        else if (state === 'failed' || state === 'closed') setConnectionState('disconnected');
+      },
+    });
+    rtcClientRef.current = rtc;
+
+    let peerPollTimer: ReturnType<typeof setInterval> | null = null;
+
+    async function initRealtime() {
       try {
         setConnectionState('connecting');
-
-        // Get Agora token from API
-        const tokenData = await apiService.post<{
-          rtcToken: string;
-          rtmToken: string;
-          channelName: string;
-          uid: number;
-          expiration: number;
-        }>(`/api/readings/${reading!.id}/agora-token`);
-
+        const localStream = await rtc.join();
         if (!mounted) return;
 
-        const appId = import.meta.env.VITE_AGORA_APP_ID;
-
-        if (reading!.type === 'chat') {
-          // RTM for chat
-          const { default: AgoraRTM } = await import('agora-rtm-sdk');
-          const rtmClient = new AgoraRTM.RTM(appId, String(tokenData.uid));
-          
-          await rtmClient.login({ token: tokenData.rtmToken });
-          
-          const channelName = reading!.agoraChannel!;
-          
-          await rtmClient.subscribe(channelName);
-
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          rtmClient.addEventListener('message', (event: any) => {
-            if (!mounted) return;
-            const content = typeof event.message === 'string'
-              ? event.message
-              : new TextDecoder().decode(event.message);
-            const msg: ChatMessage = {
-              id: `${Date.now()}-${Math.random()}`,
-              senderId: parseInt(event.publisher),
-              content,
-              timestamp: Date.now(),
-            };
-            setMessages((prev) => [...prev, msg]);
-          });
-
-          if (mounted) setConnectionState('connected');
-
-          // Cleanup
-          return () => {
-            mounted = false;
-            rtmClient.unsubscribe(channelName).catch(() => {});
-            rtmClient.logout().catch(() => {});
-          };
-        } else {
-          // RTC for voice/video
-          const AgoraRTC = (await import('agora-rtc-sdk-ng')).default;
-          const rtcClient = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
-
-          await rtcClient.join(appId, reading!.agoraChannel!, tokenData.rtcToken, tokenData.uid);
-
-          if (reading!.type === 'video') {
-            const [audioTrack, videoTrack] = await AgoraRTC.createMicrophoneAndCameraTracks();
-            localAudioTrackRef.current = audioTrack;
-            localVideoTrackRef.current = videoTrack;
-            await rtcClient.publish([audioTrack, videoTrack]);
-            if (localVideoRef.current) {
-              videoTrack.play(localVideoRef.current);
-            }
-          } else {
-            const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
-            localAudioTrackRef.current = audioTrack;
-            await rtcClient.publish([audioTrack]);
-          }
-
-          rtcClient.on('user-published', async (remoteUser, mediaType) => {
-            await rtcClient.subscribe(remoteUser, mediaType);
-            if (mediaType === 'video' && remoteVideoRef.current) {
-              remoteUser.videoTrack?.play(remoteVideoRef.current);
-            }
-            if (mediaType === 'audio') {
-              remoteUser.audioTrack?.play();
-            }
-          });
-
-          rtcClient.on('connection-state-change', (curState) => {
-            if (!mounted) return;
-            if (curState === 'CONNECTED') setConnectionState('connected');
-            else if (curState === 'RECONNECTING') setConnectionState('reconnecting');
-            else if (curState === 'DISCONNECTED') setConnectionState('disconnected');
-          });
-
-          if (mounted) setConnectionState('connected');
-
-          return () => {
-            mounted = false;
-            localAudioTrackRef.current = null;
-            localVideoTrackRef.current = null;
-            rtcClient.localTracks.forEach((t) => { t.stop(); t.close(); });
-            rtcClient.leave().catch(() => {});
-          };
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = localStream;
         }
+        setConnectionState('connected');
+
+        // Pull the other participant's tracks as soon as they announce.
+        // WS push (`reading:rtc_peer`) is instant; this poll is the fallback.
+        const trySync = async () => {
+          try {
+            const pulled = await rtc.syncPeer();
+            if (pulled && peerPollTimer) {
+              clearInterval(peerPollTimer);
+              peerPollTimer = null;
+            }
+          } catch {
+            /* transient — retried on the next tick */
+          }
+        };
+        void trySync();
+        peerPollTimer = setInterval(() => void trySync(), 3000);
       } catch (err) {
         if (mounted) {
           setConnectionState('disconnected');
           addToast('error', 'Failed to connect. Please check your connection.');
-          console.error('Agora init error:', err);
+          console.error('Realtime init error:', err);
         }
       }
     }
 
-    const cleanupPromise = initAgora();
+    void initRealtime();
 
     return () => {
       mounted = false;
-      cleanupPromise.then((cleanup) => cleanup?.()).catch(() => {});
+      if (peerPollTimer) clearInterval(peerPollTimer);
+      rtcClientRef.current = null;
+      rtc.close();
     };
   }, [reading, addToast]);
+
+  /* ── Attach the remote stream to the video/audio elements ── */
+  useEffect(() => {
+    if (!remoteStream) return;
+    if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
+    if (remoteAudioRef.current && remoteAudioRef.current.srcObject !== remoteStream) {
+      remoteAudioRef.current.srcObject = remoteStream;
+    }
+  }, [remoteStream]);
 
   /* ── Timer tick ── */
   useEffect(() => {
@@ -752,6 +753,41 @@ export function ReadingSessionPage() {
   );
   useWebSocketEvent('reading:partner_reconnected', handlePartnerReconnect);
 
+  /* Incoming chat messages pushed by the server (chat readings). */
+  const handleIncomingMessage = useCallback(
+    (payload: unknown) => {
+      const p = (payload ?? {}) as {
+        readingId?: number;
+        message?: { senderId: number; content: string; timestamp: number };
+      };
+      if (readingIdNum == null || p.readingId !== readingIdNum || !p.message) return;
+      // Our own messages are appended locally on send — only add the peer's.
+      if (user && p.message.senderId === user.id) return;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `${p.message!.timestamp}-${p.message!.senderId}`,
+          senderId: p.message!.senderId,
+          content: p.message!.content,
+          timestamp: p.message!.timestamp,
+        },
+      ]);
+    },
+    [readingIdNum, user],
+  );
+  useWebSocketEvent('reading:message', handleIncomingMessage);
+
+  /* Peer announced their SFU tracks — pull them immediately. */
+  const handleRtcPeer = useCallback(
+    (payload: unknown) => {
+      const p = (payload ?? {}) as { readingId?: number; peer?: AnnouncedPeer };
+      if (readingIdNum == null || p.readingId !== readingIdNum || !p.peer) return;
+      void rtcClientRef.current?.pullPeer(p.peer).catch(() => {});
+    },
+    [readingIdNum],
+  );
+  useWebSocketEvent('reading:rtc_peer', handleRtcPeer);
+
   /* Low-balance client-side warning when < 2 minutes of runway remains */
   const lowBalanceWarning = useMemo(() => {
     if (!user || !reading || summary) return null;
@@ -776,7 +812,8 @@ export function ReadingSessionPage() {
       };
       setMessages((prev) => [...prev, msg]);
 
-      // Send via API (which sends through Agora RTM)
+      // Send via API — stores it in the transcript and pushes it to the
+      // other participant over the WebSocket.
       try {
         await apiService.post(`/api/readings/${reading.id}/message`, {
           content: text,
@@ -791,7 +828,7 @@ export function ReadingSessionPage() {
   const handleToggleMute = useCallback(() => {
     setIsMuted((prev) => {
       const next = !prev;
-      localAudioTrackRef.current?.setMuted(next);
+      rtcClientRef.current?.setAudioEnabled(!next);
       return next;
     });
   }, []);
@@ -799,7 +836,7 @@ export function ReadingSessionPage() {
   const handleToggleCamera = useCallback(() => {
     setIsCameraOff((prev) => {
       const next = !prev;
-      localVideoTrackRef.current?.setEnabled(!next);
+      rtcClientRef.current?.setVideoEnabled(!next);
       return next;
     });
   }, []);
@@ -961,17 +998,22 @@ export function ReadingSessionPage() {
             />
           )}
           {reading.type === 'voice' && (
-            <VoiceMode
-              isMuted={isMuted}
-              onToggleMute={handleToggleMute}
-              onEnd={() => setShowEndConfirm(true)}
-              connectionState={connectionState}
-            />
+            <>
+              {/* Remote party's audio (voice readings have no video element). */}
+              <audio ref={remoteAudioRef} autoPlay style={{ display: 'none' }} />
+              <VoiceMode
+                isMuted={isMuted}
+                onToggleMute={handleToggleMute}
+                onEnd={() => setShowEndConfirm(true)}
+                connectionState={connectionState}
+              />
+            </>
           )}
           {reading.type === 'video' && (
             <VideoMode
               localVideoRef={localVideoRef}
               remoteVideoRef={remoteVideoRef}
+              hasRemoteStream={remoteStream !== null}
               isMuted={isMuted}
               isCameraOff={isCameraOff}
               onToggleMute={handleToggleMute}

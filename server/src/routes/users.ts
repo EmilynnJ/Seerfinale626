@@ -5,7 +5,7 @@ import { getDb } from "../db/db";
 import { users, readings } from "../db/schema";
 import { requireAuth } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
-import { auth0ManagementService } from "../services/auth0-management";
+import { supabaseAdminService } from "../services/supabase-admin";
 import { logger } from "../utils/logger";
 import { pendoTrack } from "../services/pendo-track";
 
@@ -159,7 +159,7 @@ router.get("/me", requireAuth, async (req, res, next) => {
       res.status(401).json({ error: "Not authenticated" });
       return;
     }
-    const { auth0Id, stripeAccountId, stripeCustomerId, ...safe } = req.user;
+    const { supabaseId, stripeAccountId, stripeCustomerId, ...safe } = req.user;
     // Include accountBalance alias so /api/me returns a consistent shape
     // that satisfies the client User type.
     res.json({ ...safe, accountBalance: safe.balance });
@@ -206,7 +206,7 @@ router.patch(
         fieldsUpdated: Object.keys(updates).filter((k) => k !== "updatedAt").join(","),
       });
 
-      const { auth0Id, stripeAccountId, stripeCustomerId, ...safe } = updated!;
+      const { supabaseId, stripeAccountId, stripeCustomerId, ...safe } = updated!;
       res.json(safe);
     } catch (err) {
       next(err);
@@ -341,7 +341,7 @@ router.patch(
         .where(eq(users.id, req.user!.id))
         .returning();
 
-      const { auth0Id, stripeAccountId, stripeCustomerId, ...safe } = u!;
+      const { supabaseId, stripeAccountId, stripeCustomerId, ...safe } = u!;
       res.json(safe);
     } catch (err) {
       next(err);
@@ -351,8 +351,8 @@ router.patch(
 
 // ─── DELETE /api/me — Delete own account ────────────────────────────────────
 // Soft-deletes the user by setting deletedAt, scrubbing PII, forcing offline,
-// and clearing Stripe/Auth0 references. Historical readings/transactions are
-// retained for compliance and accounting.
+// and clearing Stripe/Supabase Auth references. Historical readings and
+// transactions are retained for compliance and accounting.
 router.delete("/me", requireAuth, async (req, res, next) => {
   try {
     const db = getDb();
@@ -385,25 +385,25 @@ router.delete("/me", requireAuth, async (req, res, next) => {
       return;
     }
 
-    // Try to delete the Auth0 user first (best effort). If it fails we still
-    // want to scrub local data so the user is effectively logged out.
-    const auth0Id = req.user!.auth0Id;
-    let auth0Deleted = false;
+    // Try to delete the Supabase Auth user first (best effort). If it fails
+    // we still want to scrub local data so the user is effectively logged out.
+    const supabaseId = req.user!.supabaseId;
+    let authDeleted = false;
     try {
-      auth0Deleted = await auth0ManagementService.deleteUser(auth0Id);
+      authDeleted = await supabaseAdminService.deleteUser(supabaseId);
     } catch (err) {
-      logger.error({ err, userId }, "Auth0 deletion failed during account delete — continuing with local scrub");
+      logger.error({ err, userId }, "Supabase Auth deletion failed during account delete — continuing with local scrub");
     }
 
     const now = new Date();
     const scrubbedEmail = `deleted-${userId}-${now.getTime()}@deleted.soulseer.invalid`;
-    const scrubbedAuth0Id = `deleted|${userId}|${now.getTime()}`;
+    const scrubbedSupabaseId = `deleted|${userId}|${now.getTime()}`;
 
     await db
       .update(users)
       .set({
         email: scrubbedEmail,
-        auth0Id: scrubbedAuth0Id,
+        supabaseId: scrubbedSupabaseId,
         username: null,
         fullName: "Deleted User",
         profileImage: null,
@@ -417,7 +417,7 @@ router.delete("/me", requireAuth, async (req, res, next) => {
       })
       .where(eq(users.id, userId));
 
-    logger.info({ userId, auth0Deleted }, "Account deleted");
+    logger.info({ userId, authDeleted }, "Account deleted");
 
     const accountAgeDays = Math.floor(
       (now.getTime() - new Date(req.user!.createdAt).getTime()) / (1000 * 60 * 60 * 24),
@@ -425,11 +425,11 @@ router.delete("/me", requireAuth, async (req, res, next) => {
     pendoTrack("account_deleted", userId, "system", {
       userId,
       userRole: req.user!.role,
-      auth0Deleted,
+      authDeleted,
       accountAgeDays,
     });
 
-    res.json({ ok: true, auth0Deleted });
+    res.json({ ok: true, authDeleted });
   } catch (err) {
     next(err);
   }
