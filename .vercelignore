@@ -1,0 +1,32 @@
+# Guard: only client/, server/, shared/, and api/ are part of the deployment.
+# Legacy parallel implementations were removed; if anything resurrects them,
+# keep them out of Vercel builds.
+frontend
+backend
+.emergent
+
+# Non-app content
+docs
+memory
+plans
+test_reports
+workflows
+scripts
+.agents
+.claude
+.cursor
+.github
+.vibecheck
+
+# Alternate-platform deploy files (Fly.io standalone WS server, Docker, GitLab)
+Dockerfile
+.dockerignore
+fly.toml
+.gitlab-ci.yml
+
+# Local env & misc
+.env
+.env.*
+!.env.example
+*.log
+coverage
