@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import type { Request, Response, NextFunction, RequestHandler } from "express";
+import type { Request } from "express";
 import { getDb } from "../db/db";
 import { users } from "../db/schema";
 import { checkJwt } from "../middleware/auth";
@@ -14,8 +14,9 @@ import { generalLimiter } from "../middleware/rate-limit";
 const router = Router();
 
 const callbackSchema = z.object({
-  auth0Id: z.string().min(1),
-  email: z.string().email(),
+  // Optional — the authoritative id/email always come from the verified JWT.
+  supabaseId: z.string().min(1).optional(),
+  email: z.string().email().optional(),
   fullName: z.string().optional(),
   profileImage: z.string().optional(),
 });
@@ -24,47 +25,40 @@ function resolveRole(email: string): "admin" | "client" {
   return config.adminEmails.includes(email.toLowerCase()) ? "admin" : "client";
 }
 
-function jwtClaims(req: Request): { auth0Id?: string; email?: string } {
+function jwtClaims(req: Request): { supabaseId?: string; email?: string } {
   const payload = req.auth?.payload;
   return {
-    auth0Id: payload?.sub,
+    supabaseId: payload?.sub,
     email: typeof payload?.email === "string" ? payload.email : undefined,
   };
 }
 
-/**
- * JWT-only guard: verifies the Auth0 token signature and audience but does
- * NOT resolve the user row in Neon. Used on /sync so that a brand new user
- * can create their Neon row on first login without hitting the
- * chicken-and-egg 401 that resolveUser would return.
- *
- * This is intentionally named `requireAuth` here so the route reads as
- * `requireAuth, generalLimiter` per the security spec, while the rest of the
- * app continues to use the combined `requireAuth` exported by middleware/auth.
- */
-function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  (checkJwt as RequestHandler)(req, res, next);
-}
-
 function sanitizeUser(user: typeof users.$inferSelect) {
-  const { auth0Id: _a, stripeAccountId: _s, stripeCustomerId: _sc, ...safe } = user;
+  const { supabaseId: _a, stripeAccountId: _s, stripeCustomerId: _sc, ...safe } = user;
   return { ...safe, accountBalance: safe.balance };
 }
 
-// POST /api/auth/sync — Upsert Auth0 user into Neon on first (and subsequent) logins.
-// Uses jwtOnly — NOT requireAuth — so the user row does not need to exist yet.
-router.post("/sync", requireAuth, generalLimiter, validateBody(callbackSchema), async (req, res, next) => {
+// POST /api/auth/sync — Upsert the Supabase Auth user into our users table on
+// first (and subsequent) logins. Uses checkJwt — NOT requireAuth — so a brand
+// new user can create their row without the chicken-and-egg 401 that
+// resolveUser would return. Identity comes from the VERIFIED token, never
+// from the request body.
+router.post("/sync", checkJwt, generalLimiter, validateBody(callbackSchema), async (req, res, next) => {
   try {
     const db = getDb();
     const body = req.body;
-    const { auth0Id, email: jwtEmail } = jwtClaims(req);
+    const { supabaseId, email: jwtEmail } = jwtClaims(req);
 
-    if (!auth0Id) {
+    if (!supabaseId) {
       res.status(401).json({ error: "Missing authentication subject" });
       return;
     }
 
-    const email = (jwtEmail ?? body.email).toLowerCase();
+    const email = (jwtEmail ?? body.email ?? "").toLowerCase();
+    if (!email) {
+      res.status(400).json({ error: "No email available for this account" });
+      return;
+    }
     const insertRole = resolveRole(email);
 
     const profileUpdates: Partial<typeof users.$inferInsert> = {};
@@ -76,7 +70,7 @@ router.post("/sync", requireAuth, generalLimiter, validateBody(callbackSchema), 
     const [upserted] = await db
       .insert(users)
       .values({
-        auth0Id,
+        supabaseId,
         email,
         fullName: body.fullName ?? null,
         profileImage: body.profileImage ?? null,
@@ -84,7 +78,7 @@ router.post("/sync", requireAuth, generalLimiter, validateBody(callbackSchema), 
         balance: 0,
       })
       .onConflictDoUpdate({
-        target: users.auth0Id,
+        target: users.supabaseId,
         set: {
           ...profileUpdates,
           updatedAt: new Date(),

@@ -22,7 +22,7 @@ describe('Database Schema', () => {
     // Verify key columns exist
     const cols = Object.keys(users);
     expect(cols).toContain('id');
-    expect(cols).toContain('auth0Id');
+    expect(cols).toContain('supabaseId');
     expect(cols).toContain('email');
     expect(cols).toContain('role');
     expect(cols).toContain('balance');

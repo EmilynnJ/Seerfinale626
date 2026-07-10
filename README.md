@@ -6,7 +6,7 @@ SoulSeer is a premium platform connecting spiritual readers with clients seeking
 
 ## 🔮 Initial Launch Features
 
-- **Pay-Per-Minute Readings** — Live chat, voice, and video sessions via Agora
+- **Pay-Per-Minute Readings** — Live chat, voice, and video sessions via Cloudflare Realtime
 - **Spiritual Community** — On-platform forum + Discord & Facebook community links
 - **Prepay Balance System** — Clients add funds, billed per-minute during sessions
 - **Reader Dashboard** — Earnings tracking, availability toggle, rate management
@@ -18,10 +18,10 @@ SoulSeer is a premium platform connecting spiritual readers with clients seeking
 |-------|-----------|
 | Frontend | React (Vite) + TypeScript |
 | Backend | Node.js + Express + TypeScript |
-| Database | Neon (PostgreSQL) + Drizzle ORM |
-| Auth | Auth0 |
+| Database | Supabase (PostgreSQL) + Drizzle ORM |
+| Auth | Supabase Auth (email/password + Google + Apple) |
 | Payments | Stripe + Stripe Connect |
-| Real-Time | Agora (RTC + RTM) |
+| Real-Time | Cloudflare Realtime (serverless SFU + Calls TURN + MoQ relay) |
 | Architecture | Monorepo (client / server / shared) |
 
 ## 📁 Project Structure
@@ -57,12 +57,11 @@ soulseer/
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js 18+
-- npm 9+
-- Auth0 account
+- Node.js 20+
+- npm 10+
+- Supabase project (database + auth)
 - Stripe account
-- Agora account
-- Neon database
+- Cloudflare account (Realtime app + Calls TURN key)
 
 ### Setup
 
@@ -78,8 +77,11 @@ npm install
 cp .env.example .env
 # Edit .env with your credentials
 
-# 4. Sync the database schema (creates/updates all tables in Neon)
-npm run db:push
+# 4. Apply the database schema + RLS policies to Supabase Postgres
+npm run db:migrate -w server   # runs server/drizzle against DATABASE_URL
+
+# 4b. Seed the admin account (manual DB seed per launch guide)
+cd server && ADMIN_EMAIL=... ADMIN_PASSWORD=... npx tsx scripts/seed-admin.ts && cd ..
 
 # 5. Start development servers
 npm run dev
@@ -87,11 +89,12 @@ npm run dev
 
 This starts both the client (port 3000) and server (port 5000) concurrently.
 
-> **Deploying schema changes:** the schema lives in `shared/src/schema.ts` and is
-> applied with `npm run db:push` (Drizzle Kit). After pulling changes that add or
-> alter tables — e.g. the premium-messaging `messages` table — run `npm run db:push`
-> against your production `DATABASE_URL` before the new code is exercised, or those
-> endpoints will return an error due to the missing table.
+> **Deploying schema changes:** the schema lives in `shared/src/schema.ts` (Drizzle,
+> pointed at the Supabase connection string). Generate migrations with
+> `npm run db:generate -w server` and apply them with `npm run db:migrate -w server`
+> against your production `DATABASE_URL` before the new code is exercised.
+> Row Level Security policies live in `server/drizzle/0001_enable_rls_policies.sql`
+> as an additional enforcement layer — server-side role checks remain mandatory.
 
 ## ✉️ Premium Messaging
 
@@ -108,16 +111,17 @@ unlock it (60/40 reader/platform split, same as readings). Endpoints:
 
 ## 📝 API Routes
 
-All routes prefixed with `/api`. Protected routes require Auth0 JWT in Authorization header.
+All routes prefixed with `/api`. Protected routes require a Supabase Auth JWT in the Authorization header.
 
 | Method | Route | Access | Purpose |
 |--------|-------|--------|---------|
-| POST | /api/auth/sync | Auth | Sync Auth0 user to DB |
+| POST | /api/auth/sync | Auth | Sync Supabase Auth user to DB |
 | GET | /api/auth/me | Auth | Current user profile |
 | GET | /api/readers | Public | All reader profiles |
 | GET | /api/readers/online | Public | Online readers |
 | POST | /api/readings/on-demand | Client | Create reading request |
 | POST | /api/readings/:id/accept | Reader | Accept reading |
+| POST | /api/readings/:id/rtc-session | Participant | Cloudflare Realtime session access (ICE + channel) |
 | POST | /api/readings/:id/start | Participant | Start session |
 | POST | /api/readings/:id/end | Participant | End session |
 | POST | /api/payments/create-intent | Auth | Top up balance |

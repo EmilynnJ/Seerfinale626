@@ -22,7 +22,7 @@ export const forumCategorySchema = z.enum(["general", "readings", "spiritual_gro
 // ─── Auth / User Sync ───────────────────────────────────────────────────────
 
 export const userSyncSchema = z.object({
-  auth0Id: z.string().min(1, "Auth0 ID is required").max(255),
+  supabaseId: z.string().min(1, "Supabase user ID is required").max(255),
   email: z.string().email("Invalid email").max(255),
   fullName: z.string().max(255).optional(),
   profileImage: z.string().url().max(512).optional(),

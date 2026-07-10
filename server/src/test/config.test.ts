@@ -12,17 +12,22 @@ describe('Server Config', () => {
     expect(config.corsOrigin).toBe('http://localhost:3000');
   });
 
-  it('has auth0 configuration', () => {
-    expect(config.auth0).toBeDefined();
-    expect(config.auth0.domain).toBe('test.auth0.com');
-    expect(config.auth0.audience).toBe('https://api.soulseer.test');
-    expect(config.auth0.issuerBaseURL).toBe('https://test.auth0.com');
+  it('has supabase configuration', () => {
+    expect(config.supabase).toBeDefined();
+    expect(config.supabase.url).toBe('https://test-project.supabase.co');
+    expect(config.supabase.issuer).toBe('https://test-project.supabase.co/auth/v1');
+    expect(config.supabase.jwksUrl).toBe(
+      'https://test-project.supabase.co/auth/v1/.well-known/jwks.json',
+    );
+    expect(config.supabase.adminEnabled).toBe(true);
   });
 
-  it('has agora configuration', () => {
-    expect(config.agora).toBeDefined();
-    expect(config.agora.appId).toBeTruthy();
-    expect(config.agora.tokenExpiration).toBe(3600);
+  it('has cloudflare realtime configuration', () => {
+    expect(config.realtime).toBeDefined();
+    expect(config.realtime.appId).toBeTruthy();
+    expect(config.realtime.enabled).toBe(true);
+    expect(config.realtime.baseUrl).toBe('https://rtc.live.cloudflare.com/v1');
+    expect(config.realtime.tokenExpiration).toBe(3600);
   });
 
   it('has stripe configuration', () => {

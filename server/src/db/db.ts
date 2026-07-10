@@ -1,16 +1,22 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle, type NeonDatabase } from 'drizzle-orm/neon-serverless';
-import ws from 'ws';
+import pg from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from './schema';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 
-neonConfig.webSocketConstructor = ws;
+const { Pool } = pg;
+
+// Supabase Postgres requires TLS for remote connections; local test/dev
+// databases (localhost) don't speak TLS at all.
+const isLocal =
+  config.database.url.includes('localhost') ||
+  config.database.url.includes('127.0.0.1');
 
 export const pool = new Pool({
   connectionString: config.database.url,
-  // Fail fast on bad/missing connection strings instead of hanging the
-  // Vercel serverless function until the platform kills it.
+  ssl: isLocal ? undefined : { rejectUnauthorized: false },
+  // Fail fast on bad/missing connection strings instead of hanging a
+  // serverless function until the platform kills it.
   connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 30000,
 });

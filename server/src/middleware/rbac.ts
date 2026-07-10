@@ -11,8 +11,8 @@ export async function resolveUser(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const auth0Id = req.auth?.payload?.sub ?? (req.auth as any)?.sub;
-    if (!auth0Id) {
+    const supabaseId = req.auth?.payload?.sub;
+    if (!supabaseId) {
       res.status(401).json({ error: 'Missing authentication subject' });
       return;
     }
@@ -20,7 +20,7 @@ export async function resolveUser(
     const [user] = await db
       .select()
       .from(users)
-      .where(eq(users.auth0Id, auth0Id as string))
+      .where(eq(users.supabaseId, supabaseId as string))
       .limit(1);
     if (!user) {
       res.status(401).json({ error: 'User not found. Please sync your account first.' });

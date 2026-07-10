@@ -1,79 +1,44 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Hoist non-VITE_-prefixed Auth0 vars (AUTH0_DOMAIN_URL, AUTH0_ISSUER_BASE_URL,
-// AUTH0_IDENTIFIER, AUTH0_ALLOWED_URL) into the VITE_AUTH0_* names the client
-// reads, so a single Vercel env var works for both server and client.
+// Hoist non-VITE_-prefixed Supabase vars (SUPABASE_URL, SUPABASE_ANON_KEY)
+// into the VITE_SUPABASE_* names the client reads, so a single deployment
+// env var can serve both server and client.
 //
-// These three values (domain, SPA client id, API audience) are PUBLIC — they
-// ship in the browser bundle by design. We hard-code the production values as a
-// LAST-RESORT fallback so that a missing/misnamed/renamed env var (or an env
-// var that simply doesn't reach the client build) can never blank them out and
-// break login. Any env var, if present, still takes precedence.
-const FALLBACK_AUTH0_DOMAIN = 'dev-2x1dti3irhuz62jc.us.auth0.com';
-const FALLBACK_AUTH0_CLIENT_ID = 'Y3GGfwjZGjf4xEYDgAfqEeK9CiFMf4qg';
-const FALLBACK_AUTH0_AUDIENCE = 'https://api.soulseerpsychics.vercel.app';
-
-function deriveClientAuth0Env(env: Record<string, string>) {
-  const domainSource =
-    env.VITE_AUTH0_DOMAIN ||
-    env.AUTH0_DOMAIN ||
-    env.AUTH0_DOMAIN_URL ||
-    env.AUTH0_ISSUER_BASE_URL ||
-    FALLBACK_AUTH0_DOMAIN;
-  const domain = domainSource.replace(/^https?:\/\//, '').replace(/\/$/, '');
-
-  // SPA Client ID — the PUBLIC client id of the Single-Page-App Auth0
-  // application. This is NOT the Machine-to-Machine app used for the Management
-  // API (AUTH0_APP_ID / AUTH0_MGMT_CLIENT_ID). It must be hoisted here too,
-  // otherwise a deployment that sets only dashboard-style env names ends up with
-  // an empty client id and Auth0 login silently fails. Deliberately does NOT
-  // fall back to AUTH0_APP_ID to avoid colliding with the management app.
-  const clientId =
-    env.VITE_AUTH0_CLIENT_ID ||
-    env.AUTH0_SPA_CLIENT_ID ||
-    env.AUTH0_CLIENT_ID ||
-    FALLBACK_AUTH0_CLIENT_ID;
-
-  const audience =
-    env.VITE_AUTH0_AUDIENCE ||
-    env.AUTH0_AUDIENCE ||
-    env.AUTH0_IDENTIFIER ||
-    FALLBACK_AUTH0_AUDIENCE;
-
-  const redirectUri = (
-    env.VITE_AUTH0_REDIRECT_URI ||
-    env.AUTH0_ALLOWED_URL ||
-    env.AUTH0_BASE_URL ||
-    ''
-  ).replace(/\/$/, '');
-
-  return { domain, clientId, audience, redirectUri };
+// These values (project URL + publishable/anon key) are PUBLIC — they ship in
+// the browser bundle by design. The service-role key, JWT secret, database
+// URL, and every other secret are NEVER hoisted: only the specific values
+// placed in `define` below are baked into the bundle, and `envPrefix:
+// 'VITE_'` still governs what is auto-exposed via import.meta.env.
+function deriveClientSupabaseEnv(env: Record<string, string>) {
+  const url = (env.VITE_SUPABASE_URL || env.SUPABASE_URL || '').replace(/\/$/, '');
+  const anonKey =
+    env.VITE_SUPABASE_ANON_KEY ||
+    env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    env.SUPABASE_ANON_KEY ||
+    '';
+  return { url, anonKey };
 }
 
 export default defineConfig(({ mode }) => {
   // Load ALL env vars (empty prefix), not just VITE_-prefixed ones, so the
-  // alias-hoisting in deriveClientAuth0Env can see dashboard-style names like
-  // AUTH0_DOMAIN / AUTH0_IDENTIFIER / AUTH0_ALLOWED_URL. This does NOT leak
-  // secrets to the client — only the specific values placed in `define` below
-  // are baked into the bundle, and `envPrefix: 'VITE_'` still governs what is
-  // auto-exposed via import.meta.env. (A prior "VITE_-only" narrowing here
-  // silently dropped every non-VITE Auth0 alias from the client build.)
+  // alias-hoisting above can see dashboard-style names. This does NOT leak
+  // secrets to the client — see the note on deriveClientSupabaseEnv.
   const env = loadEnv(mode, process.cwd(), '');
-  const auth0 = deriveClientAuth0Env(env);
+  const sb = deriveClientSupabaseEnv(env);
 
-  const apiBase = env.VITE_API_URL || env.AUTH0_ALLOWED_URL || env.AUTH0_BASE_URL || '';
+  const apiBase = env.VITE_API_URL || '';
 
-  // Fail loudly at build time if the Auth0 essentials are missing — an empty
-  // domain or client id produces a bundle where login can never start.
-  if (!auth0.domain || !auth0.clientId) {
+  // Fail loudly at build time if the Supabase essentials are missing — an
+  // empty URL or anon key produces a bundle where login can never start.
+  if (!sb.url || !sb.anonKey) {
     // eslint-disable-next-line no-console
     console.warn(
-      '\n⚠️  [SoulSeer build] Auth0 is missing required values:' +
-        (auth0.domain ? '' : '\n   - domain (set VITE_AUTH0_DOMAIN or AUTH0_DOMAIN/AUTH0_DOMAIN_URL)') +
-        (auth0.clientId
+      '\n⚠️  [SoulSeer build] Supabase is missing required values:' +
+        (sb.url ? '' : '\n   - project URL (set VITE_SUPABASE_URL or SUPABASE_URL)') +
+        (sb.anonKey
           ? ''
-          : '\n   - client id (set VITE_AUTH0_CLIENT_ID or AUTH0_SPA_CLIENT_ID)') +
+          : '\n   - anon/publishable key (set VITE_SUPABASE_ANON_KEY or VITE_SUPABASE_PUBLISHABLE_KEY)') +
         '\n   The deployed app will not be able to log in until these are set.\n',
     );
   }
@@ -104,17 +69,15 @@ export default defineConfig(({ mode }) => {
               id.includes('node_modules/react-router')
             )
               return 'vendor';
-            if (id.includes('node_modules/@auth0')) return 'auth';
+            if (id.includes('node_modules/@supabase')) return 'auth';
           },
         },
       },
     },
     envPrefix: 'VITE_',
     define: {
-      'import.meta.env.VITE_AUTH0_DOMAIN': JSON.stringify(auth0.domain),
-      'import.meta.env.VITE_AUTH0_CLIENT_ID': JSON.stringify(auth0.clientId),
-      'import.meta.env.VITE_AUTH0_AUDIENCE': JSON.stringify(auth0.audience),
-      'import.meta.env.VITE_AUTH0_REDIRECT_URI': JSON.stringify(auth0.redirectUri),
+      'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(sb.url),
+      'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(sb.anonKey),
       'import.meta.env.VITE_API_URL': JSON.stringify(apiBase.replace(/\/$/, '')),
     },
   };

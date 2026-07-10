@@ -1,11 +1,10 @@
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import * as jose from 'jose';
 import { eq } from 'drizzle-orm';
-import { config } from '../config';
 import { logger } from '../utils/logger';
 import { getDb } from '../db/db';
 import { users } from '../db/schema';
+import { verifySupabaseToken } from '../middleware/auth';
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
@@ -18,16 +17,12 @@ class WebSocketService {
   private wss: WebSocketServer | null = null;
   private clients = new Map<number, Set<AuthenticatedSocket>>();
   private heartbeatTimer: NodeJS.Timeout | null = null;
-  private jwks: ReturnType<typeof jose.createRemoteJWKSet> | null = null;
 
   attach(server: http.Server): void {
     this.wss = new WebSocketServer({
       noServer: true,
       handleProtocols: (protocols) => Array.from(protocols)[0] || false,
     });
-    this.jwks = jose.createRemoteJWKSet(
-      new URL(`https://${config.auth0.domain}/.well-known/jwks.json`),
-    );
 
     server.on('upgrade', (request, socket, head) => {
       this.handleUpgrade(request, socket, head).catch((err) => {
@@ -86,22 +81,17 @@ class WebSocketService {
     if (!token) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return; }
 
     try {
-      const { payload } = await jose.jwtVerify(token, this.jwks!, {
-        issuer: `https://${config.auth0.domain}/`,
-        audience: config.auth0.audience,
-      });
+      const payload = await verifySupabaseToken(token);
 
-      // Prefer a custom `userId` claim if configured in Auth0; otherwise resolve
-      // the internal user by `sub` (Auth0 user_id).
-      const rawUserId = (payload as any).userId ?? (payload as any)['https://soulseer.com/userId'];
-      let userId = typeof rawUserId === 'number' ? rawUserId : parseInt(String(rawUserId || ''), 10);
-      if (!Number.isFinite(userId) || userId <= 0) userId = 0;
-      if (!userId && payload.sub) {
+      // Resolve the internal user by `sub` (Supabase Auth user id). Role and
+      // identity always come from our own DB row, never from token metadata.
+      let userId = 0;
+      if (payload.sub) {
         const db = getDb();
         const [user] = await db
           .select({ id: users.id })
           .from(users)
-          .where(eq(users.auth0Id, payload.sub))
+          .where(eq(users.supabaseId, payload.sub))
           .limit(1);
         if (user) userId = user.id;
       }

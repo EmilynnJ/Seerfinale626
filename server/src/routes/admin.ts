@@ -18,7 +18,7 @@ import { validateBody } from "../middleware/validate";
 import { strictLimiter } from "../middleware/rate-limit";
 import { config } from "../config";
 import { logger } from "../utils/logger";
-import { auth0ManagementService } from "../services/auth0-management";
+import { supabaseAdminService } from "../services/supabase-admin";
 import { cloudinaryService } from "../services/cloudinary-service";
 import { pendoTrack } from "../services/pendo-track";
 
@@ -102,8 +102,8 @@ router.get("/users", async (req, res, next) => {
 });
 
 // ─── POST /api/admin/readers — Create reader account ─────────────────────────
-// Admin provides profile details; server creates the Auth0 user automatically
-// (using the Management API), creates a Stripe Connect Express account,
+// Admin provides profile details; server creates the Supabase Auth user
+// automatically (via the Auth admin API), creates a Stripe Connect Express account,
 // inserts the reader into the DB, and returns a one-time generated password
 // plus a Stripe Connect onboarding URL for the admin to hand to the reader.
 const createReaderSchema = z.object({
@@ -123,17 +123,17 @@ router.post("/readers", validateBody(createReaderSchema), async (req, res, next)
     const db = getDb();
     const body = req.body;
 
-    if (!auth0ManagementService.enabled) {
+    if (!supabaseAdminService.enabled) {
       res.status(503).json({
         error:
-          "Auth0 Management API is not configured. Set AUTH0_MGMT_CLIENT_ID and AUTH0_MGMT_CLIENT_SECRET.",
-        code: "AUTH0_MGMT_DISABLED",
+          "Supabase admin API is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+        code: "SUPABASE_ADMIN_DISABLED",
       });
       return;
     }
 
-    // Reject duplicates by email up front — Auth0 would also 409 but we want a
-    // clean error before we create any Stripe state.
+    // Reject duplicates by email up front — Supabase would also error but we
+    // want a clean response before we create any Stripe state.
     const [existingByEmail] = await db
       .select({ id: users.id })
       .from(users)
@@ -143,21 +143,21 @@ router.post("/readers", validateBody(createReaderSchema), async (req, res, next)
       return;
     }
 
-    // 1) Create the Auth0 user (generates a secure initial password).
-    let auth0Result: { auth0Id: string; password: string };
+    // 1) Create the Supabase Auth user (generates a secure initial password).
+    let authResult: { supabaseId: string; password: string };
     try {
-      auth0Result = await auth0ManagementService.createUserWithPassword({
+      authResult = await supabaseAdminService.createUserWithPassword({
         email: body.email,
         fullName: body.fullName,
         username: body.username ?? null,
       });
     } catch (err) {
-      res.status(502).json({ error: (err as Error).message, code: "AUTH0_CREATE_FAILED" });
+      res.status(502).json({ error: (err as Error).message, code: "SUPABASE_CREATE_FAILED" });
       return;
     }
 
     // 2) Create a Stripe Connect Express account for payouts. F-005: on failure
-    // we compensate by deleting the Auth0 user we just created so the operator
+    // we compensate by deleting the Supabase user we just created so the operator
     // is not left with a half-provisioned account.
     let account: Stripe.Account;
     try {
@@ -168,27 +168,27 @@ router.post("/readers", validateBody(createReaderSchema), async (req, res, next)
           card_payments: { requested: true },
           transfers: { requested: true },
         },
-        metadata: { auth0Id: auth0Result.auth0Id, source: "admin-provisioned" },
+        metadata: { supabaseId: authResult.supabaseId, source: "admin-provisioned" },
       });
     } catch (err) {
       logger.error(
-        { err, auth0Id: auth0Result.auth0Id },
-        "Stripe Connect account creation failed; compensating by deleting the Auth0 user",
+        { err, supabaseId: authResult.supabaseId },
+        "Stripe Connect account creation failed; compensating by deleting the Supabase user",
       );
       try {
-        await auth0ManagementService.deleteUser(auth0Result.auth0Id);
+        await supabaseAdminService.deleteUser(authResult.supabaseId);
         logger.info(
-          { auth0Id: auth0Result.auth0Id },
-          "Compensating Auth0 user deletion succeeded",
+          { supabaseId: authResult.supabaseId },
+          "Compensating Supabase user deletion succeeded",
         );
       } catch (compensateErr) {
         logger.error(
-          { err: compensateErr, auth0Id: auth0Result.auth0Id },
-          "Compensating Auth0 user deletion FAILED — manual cleanup required",
+          { err: compensateErr, supabaseId: authResult.supabaseId },
+          "Compensating Supabase user deletion FAILED — manual cleanup required",
         );
       }
       res.status(502).json({
-        error: "Stripe Connect account creation failed. The Auth0 user was removed automatically; please retry.",
+        error: "Stripe Connect account creation failed. The Supabase user was removed automatically; please retry.",
         code: "STRIPE_ACCOUNT_FAILED",
       });
       return;
@@ -198,7 +198,7 @@ router.post("/readers", validateBody(createReaderSchema), async (req, res, next)
     const [reader] = await db
       .insert(users)
       .values({
-        auth0Id: auth0Result.auth0Id,
+        supabaseId: authResult.supabaseId,
         email: body.email,
         fullName: body.fullName,
         username: body.username ?? null,
@@ -223,7 +223,7 @@ router.post("/readers", validateBody(createReaderSchema), async (req, res, next)
 
     logger.info(
       { readerId: reader!.id, email: body.email, adminId: req.user!.id },
-      "Reader created by admin (Auth0 + Stripe Connect provisioned)",
+      "Reader created by admin (Supabase Auth + Stripe Connect provisioned)",
     );
 
     pendoTrack("reader_account_created", req.user!.id, "system", {
@@ -243,7 +243,7 @@ router.post("/readers", validateBody(createReaderSchema), async (req, res, next)
       reader,
       credentials: {
         email: body.email,
-        initialPassword: auth0Result.password,
+        initialPassword: authResult.password,
       },
       stripeOnboardingUrl: accountLink.url,
     });
@@ -913,7 +913,7 @@ router.delete("/comments/:id", async (req, res, next) => {
 // ─── POST /api/admin/provision-test-accounts ────────────────────────────────
 // Idempotent QA helper that creates (or repoints) the three known test
 // accounts — admin, reader, client — with caller-supplied passwords. Useful
-// for getting a clean slate after Auth0/DB resets without needing local CLI
+// for getting a clean slate after Supabase Auth/DB resets without needing local CLI
 // access. Admin-only (router-level requireRole already enforces this).
 const provisionSchema = z.object({
   adminPassword: z.string().min(8).max(128),
@@ -953,11 +953,11 @@ router.post(
   validateBody(provisionSchema),
   async (req, res, next) => {
     try {
-      if (!auth0ManagementService.enabled) {
+      if (!supabaseAdminService.enabled) {
         res.status(503).json({
           error:
-            "Auth0 Management API is not configured. Set AUTH0_MGMT_CLIENT_ID and AUTH0_MGMT_CLIENT_SECRET (or AUTH0_APP_ID/AUTH0_CLIENT_SECRET).",
-          code: "AUTH0_MGMT_DISABLED",
+            "Supabase admin API is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+          code: "SUPABASE_ADMIN_DISABLED",
         });
         return;
       }
@@ -971,7 +971,7 @@ router.post(
 
       const results = await Promise.all(
         TEST_ACCOUNTS.map(async (spec) => {
-          const upsert = await auth0ManagementService.upsertUserWithPassword({
+          const upsert = await supabaseAdminService.upsertUserWithPassword({
             email: spec.email,
             password: passwordByRole[spec.role]!,
             fullName: spec.fullName,
@@ -996,25 +996,25 @@ router.post(
           const [existing] = await db
             .select({ id: users.id })
             .from(users)
-            .where(eq(users.auth0Id, upsert.auth0Id));
+            .where(eq(users.supabaseId, upsert.supabaseId));
 
           if (existing) {
             await db.update(users).set(patch).where(eq(users.id, existing.id));
             return {
               email: spec.email,
               role: spec.role,
-              auth0Created: upsert.created,
+              authCreated: upsert.created,
               dbAction: "updated" as const,
             };
           } else {
             await db
               .insert(users)
-              .values({ auth0Id: upsert.auth0Id, ...patch })
+              .values({ supabaseId: upsert.supabaseId, ...patch })
               .returning({ id: users.id });
             return {
               email: spec.email,
               role: spec.role,
-              auth0Created: upsert.created,
+              authCreated: upsert.created,
               dbAction: "inserted" as const,
             };
           }

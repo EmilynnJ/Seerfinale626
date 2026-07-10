@@ -6,7 +6,7 @@ import { users, readings, transactions } from "../db/schema";
 import { requireAuth } from "../middleware/auth";
 import { requireParticipant } from "../middleware/rbac";
 import { validateBody } from "../middleware/validate";
-import { AgoraService } from "../services/agora-service";
+import { RealtimeService } from "../services/realtime-service";
 import { wsService } from "../services/websocket-service";
 import { billingService } from "../services/billing-service";
 import { logger } from "../utils/logger";
@@ -85,20 +85,23 @@ router.post(
         return;
       }
 
-      // Create unique Agora channel name
-      const channelName = `reading_${Date.now()}_${readerId}`;
-
-      // Create reading record
-      const [reading] = await db
+      // Create reading record, then stamp the unique Realtime channel name
+      // (reading_[readingId] per build guide) once the id is known.
+      const [inserted] = await db
         .insert(readings)
         .values({
           clientId: req.user!.id,
           readerId,
           readingType,
           ratePerMinute,
-          agoraChannel: channelName,
           status: "pending",
         })
+        .returning();
+
+      const [reading] = await db
+        .update(readings)
+        .set({ rtcChannel: `reading_${inserted!.id}` })
+        .where(eq(readings.id, inserted!.id))
         .returning();
 
       // Notify reader via WebSocket
@@ -250,7 +253,7 @@ router.post("/:id/accept", requireAuth, async (req, res, next) => {
     // Notify client that the reading was accepted
     wsService.send(reading.clientId, "reading:accepted", {
       readingId,
-      agoraChannel: reading.agoraChannel,
+      rtcChannel: reading.rtcChannel,
     });
 
     logger.info({ readingId }, "Reading accepted by reader");
@@ -272,41 +275,40 @@ router.post("/:id/accept", requireAuth, async (req, res, next) => {
   }
 });
 
-// ─── POST /api/readings/:id/agora-token — Get Agora token ───────────────────
+// ─── Cloudflare Realtime session access & SFU proxy ─────────────────────────
+// Replaces the old /:id/agora-token endpoint. All Cloudflare API calls are
+// made server-side with the app token; the client only ever receives
+// short-lived ICE credentials and proxied SFU responses. Participant-only,
+// auth-gated, and the reading must exist and be joinable.
+
+function assertJoinable(reading: { status: string }): boolean {
+  return (
+    reading.status === "accepted" ||
+    reading.status === "in_progress" ||
+    reading.status === "active" ||
+    reading.status === "paused"
+  );
+}
+
+// POST /api/readings/:id/rtc-session — session bootstrap (channel + ICE + MoQ)
 router.post(
-  "/:id/agora-token",
+  "/:id/rtc-session",
   requireAuth,
   requireParticipant,
   async (req, res, next) => {
     try {
       const reading = req.reading!;
 
-      if (!reading.agoraChannel) {
-        res.status(400).json({ error: "No Agora channel for this reading" });
-        return;
-      }
-
-      // Only allow token generation for accepted or in_progress readings
-      if (
-        reading.status !== "accepted" &&
-        reading.status !== "in_progress" &&
-        reading.status !== "active"
-      ) {
+      if (!assertJoinable(reading)) {
         res.status(409).json({ error: "Reading is not in a joinable state" });
         return;
       }
 
-      const tokens = AgoraService.generateTokens(
-        reading.agoraChannel,
-        req.user!.id,
-      );
-
+      const access = await RealtimeService.buildSessionAccess(reading.id);
       res.json({
-        rtcToken: tokens.rtcToken,
-        rtmToken: tokens.rtmToken,
-        channelName: tokens.channelName,
-        uid: tokens.uid,
-        expiration: tokens.expiration,
+        ...access,
+        readingId: reading.id,
+        role: req.user!.id === reading.clientId ? "client" : "reader",
       });
     } catch (err) {
       next(err);
@@ -314,30 +316,139 @@ router.post(
   },
 );
 
-// ─── POST /api/readings/:id/rtmp/start — Start RTMP push ─────────────────────
-const startRtmpSchema = z.object({
-  rtmpUrl: z.string().url(),
-});
-
+// POST /api/readings/:id/rtc/sessions/new — create an SFU session
 router.post(
-  "/:id/rtmp/start",
+  "/:id/rtc/sessions/new",
   requireAuth,
   requireParticipant,
-  validateBody(startRtmpSchema),
   async (req, res, next) => {
     try {
-      const reading = req.reading!;
-
-      if (reading.status !== "active" && reading.status !== "in_progress") {
-        res.status(409).json({ error: "Reading must be active to start RTMP" });
+      if (!assertJoinable(req.reading!)) {
+        res.status(409).json({ error: "Reading is not in a joinable state" });
         return;
       }
+      const result = await RealtimeService.sfuRequest("POST", "sessions/new", req.body);
+      res.status(result.status).json(result.body ?? {});
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-      await AgoraService.startRtmpPush(
-        `reading_${reading.id}`,
-        req.body.rtmpUrl,
-        req.user!.id,
+// POST /api/readings/:id/rtc/sessions/:sessionId/tracks/new — push/pull tracks
+router.post(
+  "/:id/rtc/sessions/:sessionId/tracks/new",
+  requireAuth,
+  requireParticipant,
+  async (req, res, next) => {
+    try {
+      if (!assertJoinable(req.reading!)) {
+        res.status(409).json({ error: "Reading is not in a joinable state" });
+        return;
+      }
+      const sessionId = encodeURIComponent(req.params.sessionId!);
+      const result = await RealtimeService.sfuRequest(
+        "POST",
+        `sessions/${sessionId}/tracks/new`,
+        req.body,
       );
+      res.status(result.status).json(result.body ?? {});
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// PUT /api/readings/:id/rtc/sessions/:sessionId/renegotiate — SDP renegotiation
+router.put(
+  "/:id/rtc/sessions/:sessionId/renegotiate",
+  requireAuth,
+  requireParticipant,
+  async (req, res, next) => {
+    try {
+      const sessionId = encodeURIComponent(req.params.sessionId!);
+      const result = await RealtimeService.sfuRequest(
+        "PUT",
+        `sessions/${sessionId}/renegotiate`,
+        req.body,
+      );
+      res.status(result.status).json(result.body ?? {});
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// PUT /api/readings/:id/rtc/sessions/:sessionId/tracks/close — close tracks
+router.put(
+  "/:id/rtc/sessions/:sessionId/tracks/close",
+  requireAuth,
+  requireParticipant,
+  async (req, res, next) => {
+    try {
+      const sessionId = encodeURIComponent(req.params.sessionId!);
+      const result = await RealtimeService.sfuRequest(
+        "PUT",
+        `sessions/${sessionId}/tracks/close`,
+        req.body,
+      );
+      res.status(result.status).json(result.body ?? {});
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── RTC signaling: announce published tracks / discover the peer's ─────────
+const announceSchema = z.object({
+  sessionId: z.string().min(1).max(255),
+  tracks: z
+    .array(
+      z.object({
+        trackName: z.string().min(1).max(255),
+        kind: z.enum(["audio", "video"]),
+      }),
+    )
+    .max(4),
+});
+
+// POST /api/readings/:id/rtc/announce — publish my session id + track names
+router.post(
+  "/:id/rtc/announce",
+  requireAuth,
+  requireParticipant,
+  validateBody(announceSchema),
+  async (req, res, next) => {
+    try {
+      const db = getDb();
+      const reading = req.reading!;
+      const role = req.user!.id === reading.clientId ? "client" : "reader";
+
+      const currentState =
+        (reading.rtcState as Record<string, unknown> | null) ?? {};
+      const nextState = {
+        ...currentState,
+        [role]: {
+          sessionId: req.body.sessionId,
+          tracks: req.body.tracks,
+          userId: req.user!.id,
+          updatedAt: Date.now(),
+        },
+      };
+
+      await db
+        .update(readings)
+        .set({ rtcState: nextState, updatedAt: new Date() })
+        .where(eq(readings.id, reading.id));
+
+      // Push the announcement to the other participant so they can pull
+      // the new tracks immediately (polling GET /rtc/peers is the fallback).
+      const otherUserId =
+        role === "client" ? reading.readerId : reading.clientId;
+      wsService.send(otherUserId, "reading:rtc_peer", {
+        readingId: reading.id,
+        peer: nextState[role],
+      });
 
       res.json({ ok: true });
     } catch (err) {
@@ -346,18 +457,26 @@ router.post(
   },
 );
 
-// ─── POST /api/readings/:id/rtmp/stop — Stop RTMP push ───────────────────────
-router.post(
-  "/:id/rtmp/stop",
+// GET /api/readings/:id/rtc/peers — the other participant's announced tracks
+router.get(
+  "/:id/rtc/peers",
   requireAuth,
   requireParticipant,
   async (req, res, next) => {
     try {
+      const db = getDb();
       const reading = req.reading!;
+      // Re-read: req.reading may be stale relative to a just-announced peer.
+      const [fresh] = await db
+        .select({ rtcState: readings.rtcState })
+        .from(readings)
+        .where(eq(readings.id, reading.id));
 
-      await AgoraService.stopRtmpPush(`reading_${reading.id}`);
+      const state = (fresh?.rtcState as Record<string, unknown> | null) ?? {};
+      const myRole = req.user!.id === reading.clientId ? "client" : "reader";
+      const peerRole = myRole === "client" ? "reader" : "client";
 
-      res.json({ ok: true });
+      res.json({ peer: state[peerRole] ?? null, self: state[myRole] ?? null });
     } catch (err) {
       next(err);
     }

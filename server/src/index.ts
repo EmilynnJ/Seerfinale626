@@ -34,7 +34,16 @@ app.use(
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
-        connectSrc: ["'self'", 'https://*.agora.io', 'wss://*.agora.io', 'https://*.stripe.com'],
+        connectSrc: [
+          "'self'",
+          'https://*.supabase.co',
+          'wss://*.supabase.co',
+          'https://rtc.live.cloudflare.com',
+          'https://*.cloudflare.com',
+          'wss://*.cloudflare.com',
+          'https://*.mediaoverquic.com',
+          'https://*.stripe.com',
+        ],
         frameSrc: ["'self'", 'https://*.stripe.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com'],
         objectSrc: ["'none'"],
@@ -42,7 +51,7 @@ app.use(
         workerSrc: ["'self'", 'blob:'],
       },
     },
-    crossOriginEmbedderPolicy: false, // needed for Agora
+    crossOriginEmbedderPolicy: false, // needed for WebRTC media (Cloudflare Realtime)
     hsts: {
       maxAge: 31536000,
       includeSubDomains: true,

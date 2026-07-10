@@ -70,8 +70,7 @@ export interface Reading {
   totalCost: number; // alias for totalCharged for compatibility
   readerEarned: number;
   platformEarned: number;
-  agoraChannel?: string;
-  agoraToken?: string;
+  rtcChannel?: string;
   paymentStatus: PaymentStatus;
   chatTranscript?: any[];
   rating?: number;
